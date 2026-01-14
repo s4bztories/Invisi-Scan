@@ -102,6 +102,7 @@ The developer is not responsible for misuse of this tool.
 Cybersecurity & Ethical Hacking Enthusiast  
 
 GitHub: https://github.com/s4bztories  
+LinkedIn: https://www.linkedin.com/in/jeyasabarinath/
 
 ---
 
