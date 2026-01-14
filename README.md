@@ -43,9 +43,23 @@ The InvisiScan dashboard follows a Security Operations Center (SOC) inspired dar
 ---
 
 ## ⚙️ Installation & Usage
+## ✅ Prerequisites
+
+Before running InvisiScan, ensure the following are installed on your system:
+
+- Python 3.8 or higher
+- pip (Python package manager)
+- Windows OS (for `run.bat`)
+- Internet connection (for installing dependencies)
+
+Required Python libraries (installed automatically by `run.bat`):
+- Flask / Streamlit
+- Socket
+- Concurrent Futures
+
 
 ### Clone the repository
-git clone https://github.com/s4bztories/Invisi Scan.git
+git clone https://github.com/s4bztories/Invisi-Scan.git
 cd InvisiScan
 
 ### Run (Windows)
