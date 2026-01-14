@@ -1,6 +1,6 @@
 # 🔐 InvisiScan – Network Port Scanner Dashboard
 <p align="center">
-  <img src="logo.png" width="400" alt="InvisiScan Logo"/>
+  <img src="Logo.png" width="400" alt="InvisiScan Logo"/>
 </p>
 
 <h1 align="center">InvisiScan – Network Port Scanner Dashboard</h1>
