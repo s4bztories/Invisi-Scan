@@ -60,6 +60,7 @@ Required Python libraries (installed automatically by `run.bat`):
 
 ### Clone the repository
 git clone https://github.com/s4bztories/Invisi-Scan.git
+
 cd InvisiScan
 
 ### Run (Windows)
