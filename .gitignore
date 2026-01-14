@@ -1,0 +1,42 @@
+# ===============================
+# Python
+# ===============================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables
+.env
+
+# ===============================
+# Project Outputs / Reports
+# ===============================
+exports/
+reports/
+*.csv
+*.txt
+*.json
+
+# ===============================
+# Logs & Temp files
+# ===============================
+*.log
+*.tmp
+
+# ===============================
+# OS / Editor files
+# ===============================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ===============================
+# Node / Frontend (if any)
+# ===============================
+node_modules/
