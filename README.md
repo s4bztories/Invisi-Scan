@@ -1,4 +1,7 @@
 # 🔐 InvisiScan – Network Port Scanner Dashboard
+<p align="center">
+  <img src="logo.png" width="180" />
+</p>
 
 InvisiScan is a Python-based ethical network reconnaissance tool that scans open ports, detects running services, evaluates risk levels, and visualizes results through a modern security-focused dashboard.
 
