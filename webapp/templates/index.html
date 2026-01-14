@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>AI Ethical Hacking Lab — Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="dark-body">
+  <div class="page">
+    <header class="topbar">
+      <div class="logo">AI Ethical Hacking Lab</div>
+      <div class="meta">Local Dashboard — <span id="targetLabel">no report loaded</span></div>
+    </header>
+
+    <main class="container">
+      <section class="left-panel">
+        <div class="card">
+          <h3>Summary</h3>
+          <div id="summary">
+            <p>Loading report...</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Open Ports (by port)</h3>
+          <canvas id="portsChart"></canvas>
+        </div>
+
+        <div class="card">
+          <h3>Top CVE Hits</h3>
+          <div id="cveList">Loading...</div>
+        </div>
+      </section>
+
+      <section class="right-panel">
+        <div class="card terminal-card">
+          <h3>Recent Banners</h3>
+          <pre id="banners">Loading...</pre>
+        </div>
+
+        <div class="card">
+          <h3>Raw Report</h3>
+          <pre id="rawJson" class="raw"></pre>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div>Run the scanner and then refresh this page. <span id="updatedAt"></span></div>
+    </footer>
+  </div>
+
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>

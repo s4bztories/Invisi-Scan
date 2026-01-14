@@ -1,0 +1,20 @@
+{
+  "target": "www.tcs.com",
+  "timestamp": "2026-01-11T05:58:37.471794Z",
+  "open_ports": [
+    80,
+    443
+  ],
+  "banners": {
+    "80": "HTTP/1.0 301 Moved Permanently",
+    "443": ""
+  },
+  "cves": {
+    "80": [],
+    "443": []
+  },
+  "explanations": {
+    "80": "No quick CVE hits found by heuristic.",
+    "443": "No quick CVE hits found by heuristic."
+  }
+}
