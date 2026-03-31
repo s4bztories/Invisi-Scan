@@ -1,0 +1,7 @@
+{
+  "name": "invisi-scan-root",
+  "private": true,
+  "scripts": {
+    "build": "cd frontend && npm install && npm run build && cd .. && rm -rf public && cp -r frontend/dist public"
+  }
+}
