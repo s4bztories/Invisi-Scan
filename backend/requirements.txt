@@ -19,3 +19,4 @@ PyJWT==2.8.0
 passlib==1.7.4
 bcrypt==4.1.2
 
+apscheduler>=3.10.0
