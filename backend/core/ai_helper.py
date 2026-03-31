@@ -31,8 +31,12 @@ class AIHelper:
                 continue
             if USE_OPENAI:
                 try:
-                    prompt = """You are a helpful cybersecurity assistant.
-Summarize the following CVE entries (id + summary) in 3 short bullet points each: \n\n"""
+                    prompt = """You are an elite expert Penetration Tester.
+For the following CVEs:
+1. Provide a brief 1-sentence executive risk summary.
+2. Provide an exact Metasploit (MSFConsole) command or Exploit-DB reference to test it.
+3. Provide the exact bash command or methodology to remediate/patch the vulnerability.
+Format your response in ultra-concise, highly readable Markdown.\n\nCVEs:\n"""
                     for it in items:
                         cid = it.get('id') or it.get('cve') or 'UNKNOWN'
                         summary = it.get('summary') or it.get('vuln') or ''

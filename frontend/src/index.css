@@ -1,0 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-[#0A0A0B] text-slate-400 font-sans antialiased min-h-screen overflow-x-hidden;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+}
+
+@layer components {
+  /* Ultra smooth Apple/Vercel glass */
+  .glass-panel {
+    @apply bg-[#111113]/80 backdrop-blur-xl border border-white/[0.05] rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] overflow-hidden transition-all duration-500;
+  }
+  .glass-nav {
+    @apply bg-[#111113]/80 backdrop-blur-xl border border-white/[0.05] shadow-lg shadow-black/20;
+  }
+  
+  /* Elegant Soft Button */
+  .btn-primary {
+    @apply relative overflow-hidden bg-white text-black font-semibold tracking-wide py-3 px-6 rounded-2xl shadow-[0_0_20px_rgba(255,255,255,0.1)] hover:shadow-[0_0_30px_rgba(255,255,255,0.2)] hover:scale-[1.02] transition-all duration-300 disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center gap-2;
+  }
+
+  /* Soft Inputs */
+  .input-field {
+    @apply bg-[#1A1A1D] border border-white/[0.08] focus:border-indigo-500/50 focus:bg-[#222226] focus:ring-4 focus:ring-indigo-500/10 rounded-2xl px-5 py-3.5 text-slate-200 outline-none transition-all placeholder:text-slate-500 w-full;
+  }
+  
+  /* Sleek Scrollbars */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-slate-700/50 rounded-full hover:bg-slate-600/50;
+  }
+}
+
+/* 3D Background Overrides */
+.animated-grid {
+  animation: gridForward 15s linear infinite;
+}
+@keyframes gridForward {
+  0% { transform: rotateX(75deg) translateY(0) translateZ(-200px); }
+  100% { transform: rotateX(75deg) translateY(80px) translateZ(-200px); }
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
