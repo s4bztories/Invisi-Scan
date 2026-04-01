@@ -29652,7 +29652,7 @@ function le() {
 	}, t.allowFsRead = void 0, t.loadImageFile = t.loadFile;
 }(E$1.API), function(e) {
 	function r() {
-		return (i$1.html2canvas ? Promise.resolve(i$1.html2canvas) : __vitePreload(() => import("./html2canvas-CoBM2g9q.js").then((m) => /* @__PURE__ */ __toESM(m.default)), [])).catch(function(t) {
+		return (i$1.html2canvas ? Promise.resolve(i$1.html2canvas) : __vitePreload(() => import("./html2canvas-4OTdKGHd.js").then((m) => /* @__PURE__ */ __toESM(m.default)), [])).catch(function(t) {
 			return Promise.reject(/* @__PURE__ */ new Error("Could not load html2canvas: " + t));
 		}).then(function(t) {
 			return t.default ? t.default : t;
@@ -30787,7 +30787,7 @@ function le() {
 		ignoreAnimation: !0,
 		ignoreDimensions: !0
 	}, d = this;
-	return (i$1.canvg ? Promise.resolve(i$1.canvg) : __vitePreload(() => import("./index.es-zKz7rh9w.js"), [])).catch(function(t) {
+	return (i$1.canvg ? Promise.resolve(i$1.canvg) : __vitePreload(() => import("./index.es-B7M89J5-.js"), [])).catch(function(t) {
 		return Promise.reject(/* @__PURE__ */ new Error("Could not load canvg: " + t));
 	}).then(function(t) {
 		return t.default ? t.default : t;
@@ -69019,7 +69019,7 @@ function AnalyticsDashboard({ authData }) {
 	const [data, setData] = (0, import_react.useState)(null);
 	const [loading, setLoading] = (0, import_react.useState)(true);
 	(0, import_react.useEffect)(() => {
-		fetch(`http://localhost:8001/api/analytics`, { headers: { "Authorization": `Bearer ${authData.token}` } }).then((r) => r.json()).then((d) => {
+		fetch(`https://invisiscan-api.onrender.com/api/analytics`, { headers: { "Authorization": `Bearer ${authData.token}` } }).then((r) => r.json()).then((d) => {
 			if (d.ok) setData(d.analytics);
 			setLoading(false);
 		}).catch(() => setLoading(false));
@@ -69202,7 +69202,7 @@ function Autopilot({ authData }) {
 	const [loading, setLoading] = (0, import_react.useState)(true);
 	const fetchScans = async () => {
 		try {
-			const data = await (await fetch(`http://localhost:8001/api/schedule`, { headers: { "Authorization": `Bearer ${authData.token}` } })).json();
+			const data = await (await fetch(`https://invisiscan-api.onrender.com/api/schedule`, { headers: { "Authorization": `Bearer ${authData.token}` } })).json();
 			if (data.ok) setScans(data.scans || []);
 		} finally {
 			setLoading(false);
@@ -69214,7 +69214,7 @@ function Autopilot({ authData }) {
 	const handleAdd = async (e) => {
 		e.preventDefault();
 		if (!target) return;
-		await fetch(`http://localhost:8001/api/schedule`, {
+		await fetch(`https://invisiscan-api.onrender.com/api/schedule`, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
@@ -69229,7 +69229,7 @@ function Autopilot({ authData }) {
 		fetchScans();
 	};
 	const handleDelete = async (id) => {
-		await fetch(`http://localhost:8001/api/schedule/${id}`, {
+		await fetch(`https://invisiscan-api.onrender.com/api/schedule/${id}`, {
 			method: "DELETE",
 			headers: { "Authorization": `Bearer ${authData.token}` }
 		});
@@ -69351,7 +69351,7 @@ function AdminPanel({ authData }) {
 	const [loading, setLoading] = (0, import_react.useState)(true);
 	const fetchUsers = async () => {
 		try {
-			const data = await (await fetch(`http://localhost:8001/api/admin/users`, { headers: { "Authorization": `Bearer ${authData.token}` } })).json();
+			const data = await (await fetch(`https://invisiscan-api.onrender.com/api/admin/users`, { headers: { "Authorization": `Bearer ${authData.token}` } })).json();
 			if (data.ok) setUsers(data.users);
 		} finally {
 			setLoading(false);
@@ -69570,7 +69570,7 @@ var ParticleNetwork3D = () => {
 		]
 	});
 };
-var API_BASE_URL = "http://localhost:8001";
+var API_BASE_URL = "https://invisiscan-api.onrender.com";
 function Login({ onLogin }) {
 	const [username, setUsername] = (0, import_react.useState)("");
 	const [password, setPassword] = (0, import_react.useState)("");
