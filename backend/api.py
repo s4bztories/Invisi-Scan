@@ -327,20 +327,41 @@ class RegisterRequest(BaseModel):
             raise ValueError('Role must be operator or admin')
         return v
 
-async def send_telegram_alert(username: str):
+async def send_telegram_alert(username: str, request: Request):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
+    
+    # Extract user details
+    client_ip = request.client.host if request.client else "Unknown"
+    user_agent = request.headers.get("User-Agent", "Unknown")
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    
+    # Get geolocation data
+    geo_data = await lookup_geo(client_ip)
+    
+    # Format detailed message
+    message = f"""🚨 *SOC LOGIN ALERT* 🚨
+
+👤 **User:** `{username}`
+🕒 **Time:** {timestamp}
+🌐 **IP Address:** {client_ip}
+📍 **Location:** {geo_data.get('city', 'Unknown')}, {geo_data.get('country', 'Unknown')}
+🏢 **ISP:** {geo_data.get('isp', 'Unknown')}
+📱 **User Agent:** {user_agent[:100]}...
+
+⚠️ *New login detected - monitor activity*"""
+
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID, 
-        "text": f"🚨 *SOC Alert* 🚨\nNew Login Detected!\n👤 User: `{username}`",
+        "text": message,
         "parse_mode": "Markdown"
     }
     async with httpx.AsyncClient() as client:
         try:
-            await client.post(url, json=payload, timeout=3.0)
-        except Exception:
-            pass
+            await client.post(url, json=payload, timeout=5.0)
+        except Exception as e:
+            logger.error(f"Failed to send Telegram alert: {e}")
 
 @app.post("/api/register")
 @limiter.limit("5/minute")
@@ -371,7 +392,7 @@ async def login(request: Request, req: LoginRequest):
             return {"ok": False, "error": "Invalid credentials"}
 
         logger.info(f"Successful login for user: {req.username}")
-        await send_telegram_alert(req.username)
+        await send_telegram_alert(req.username, request)
 
         # Generate JWT Token
         token_data = {"sub": user.username, "role": user.role, "exp": datetime.now(timezone.utc) + timedelta(hours=24)}
