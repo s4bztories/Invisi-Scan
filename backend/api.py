@@ -5,7 +5,7 @@ import sys
 import socket
 import ipaddress
 import logging
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -327,13 +327,10 @@ class RegisterRequest(BaseModel):
             raise ValueError('Role must be operator or admin')
         return v
 
-async def send_telegram_alert(username: str, request: Request):
+async def send_telegram_alert(username: str, client_ip: str, user_agent: str):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
     
-    # Extract user details
-    client_ip = request.client.host if request.client else "Unknown"
-    user_agent = request.headers.get("User-Agent", "Unknown")
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     
     # Get geolocation data
@@ -381,7 +378,7 @@ async def register(request: Request, req: RegisterRequest):
 
 @app.post("/api/login")
 @limiter.limit("5/minute")
-async def login(request: Request, req: LoginRequest):
+async def login(request: Request, req: LoginRequest, background_tasks: BackgroundTasks):
     try:
         db = database.SessionLocal()
         user = database.authenticate_user(db, req.username, req.password)
@@ -392,7 +389,9 @@ async def login(request: Request, req: LoginRequest):
             return {"ok": False, "error": "Invalid credentials"}
 
         logger.info(f"Successful login for user: {req.username}")
-        await send_telegram_alert(req.username, request)
+        client_ip = request.client.host if request.client else "Unknown"
+        user_agent = request.headers.get("User-Agent", "Unknown")
+        background_tasks.add_task(send_telegram_alert, req.username, client_ip, user_agent)
 
         # Generate JWT Token
         token_data = {"sub": user.username, "role": user.role, "exp": datetime.now(timezone.utc) + timedelta(hours=24)}
