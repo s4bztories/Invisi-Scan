@@ -260,7 +260,7 @@ function Login({ onLogin }) {
   );
 }
 function Dashboard({ authData, onLogout }) {
-  const [activeTab, setActiveTab] = useState('scanner');
+  const [activeTab, setActiveTab] = useState('analytics');
   const [target, setTarget] = useState('');
   const [portsMode, setPortsMode] = useState('fast');
   const [isScanning, setIsScanning] = useState(false);
@@ -305,6 +305,11 @@ function Dashboard({ authData, onLogout }) {
           'Authorization': `Bearer ${authData?.token}`
         }
       });
+      if (res.status === 401) {
+        localStorage.removeItem('soc_session');
+        window.location.reload();
+        return;
+      }
       const data = await res.json();
       if (data.ok) {
         setHistoryList(data.history);
@@ -372,6 +377,12 @@ function Dashboard({ authData, onLogout }) {
           addLog(data.message, 'error');
           setIsScanning(false);
           ws.close();
+          if (data.message.toLowerCase().includes('expired') || data.message.toLowerCase().includes('invalid')) {
+            setTimeout(() => {
+              localStorage.removeItem('soc_session');
+              window.location.reload();
+            }, 2500);
+          }
           break;
         case 'port_found':
           setOpenPorts(prev => {
@@ -560,8 +571,8 @@ function Dashboard({ authData, onLogout }) {
               )}
             </div>
             
-            <div className="flex items-center gap-4 pl-8 border-l border-white/10">
-              <div className="hidden md:block text-right">
+            <div className="flex items-center justify-center gap-4 pt-4 md:pt-0 md:pl-8 border-t md:border-t-0 md:border-l border-white/10 w-full md:w-auto mt-2 md:mt-0">
+              <div className="text-right">
                 <p className="text-sm text-slate-200 font-semibold">{(username || 'GUEST')}</p>
                 <p className="text-xs text-indigo-400 font-medium tracking-wide">{(role || 'OPERATOR').toUpperCase()}</p>
               </div>
@@ -690,7 +701,7 @@ function Dashboard({ authData, onLogout }) {
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 px-2 gap-4">
                 <h2 className="text-2xl font-bold text-white flex items-center gap-3 tracking-tight">
                   <Activity className="w-7 h-7 text-indigo-400 drop-shadow-[0_0_15px_rgba(129,140,248,0.5)]" /> 
-                  Intelligence Matrix
+                  Advanced Scanner
                 </h2>
                 
                 {reportData && (
