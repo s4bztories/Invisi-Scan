@@ -191,7 +191,7 @@ function Login({ onLogin }) {
       <ParticleNetwork3D />
       
       {/* Floating Center Panel */}
-      <div className="glass-panel max-w-md w-full p-10 relative z-10 border border-white/10 shadow-[0_0_50px_rgba(99,102,241,0.1)] hover:shadow-[0_0_80px_rgba(99,102,241,0.2)] transition-shadow duration-700">
+      <div className="glass-panel max-w-md w-[95%] sm:w-full p-6 sm:p-10 mx-auto relative z-10 border border-white/10 shadow-[0_0_50px_rgba(99,102,241,0.1)] hover:shadow-[0_0_80px_rgba(99,102,241,0.2)] transition-shadow duration-700">
         <div className="flex flex-col items-center mb-10 relative">
           <div className="absolute inset-0 bg-indigo-500/20 blur-3xl rounded-full"></div>
           <Shield className="w-14 h-14 text-indigo-400 mb-5 relative z-10 drop-shadow-[0_0_15px_rgba(129,140,248,0.5)]" />
@@ -513,7 +513,7 @@ function Dashboard({ authData, onLogout }) {
 
       <div className="max-w-7xl mx-auto px-6 pt-8 relative z-10 w-full">
         {/* Modern Clean Header */}
-        <header className="glass-nav rounded-[2rem] px-8 py-5 flex flex-col md:flex-row items-center justify-between mb-12">
+        <header className="glass-nav rounded-2xl md:rounded-[2rem] px-4 md:px-8 py-4 md:py-5 flex flex-col md:flex-row items-center justify-between mb-12">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
               <Shield className="w-6 h-6 text-white" />
@@ -524,8 +524,8 @@ function Dashboard({ authData, onLogout }) {
             </div>
           </div>
           
-          <div className="flex items-center gap-8 mt-4 md:mt-0">
-            <div className="flex bg-[#1A1A1D] rounded-xl p-1 shadow-inner">
+          <div className="flex flex-col md:flex-row items-center gap-4 md:gap-8 mt-4 md:mt-0 w-full md:w-auto">
+            <div className="flex flex-wrap justify-center sm:flex-nowrap bg-[#1A1A1D] rounded-xl p-1 shadow-inner w-full sm:w-auto overflow-x-auto gap-1 sm:gap-0">
               <button 
                 onClick={() => setActiveTab('analytics')} 
                 className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all flex items-center gap-2 ${activeTab === 'analytics' ? 'bg-white text-black shadow-sm' : 'text-slate-400 hover:text-white'}`}
@@ -975,7 +975,17 @@ function App() {
     localStorage.setItem('soc_session', JSON.stringify(data));
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await fetch(`${API_BASE_URL}/api/logout`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authData.token}`
+        }
+      });
+    } catch(e) {
+      console.error("Logout error", e);
+    }
     localStorage.removeItem('soc_session');
     setAuthData(null);
     window.location.reload();

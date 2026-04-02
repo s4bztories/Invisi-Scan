@@ -327,7 +327,7 @@ class RegisterRequest(BaseModel):
             raise ValueError('Role must be operator or admin')
         return v
 
-async def send_telegram_alert(username: str, client_ip: str, user_agent: str):
+async def send_telegram_alert(username: str, client_ip: str, user_agent: str, action: str = "LOGIN"):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
     
@@ -337,7 +337,7 @@ async def send_telegram_alert(username: str, client_ip: str, user_agent: str):
     geo_data = await lookup_geo(client_ip)
     
     # Format detailed message
-    message = f"""🚨 *SOC LOGIN ALERT* 🚨
+    message = f"""🚨 *SOC {action.upper()} ALERT* 🚨
 
 👤 **User:** `{username}`
 🕒 **Time:** {timestamp}
@@ -346,7 +346,7 @@ async def send_telegram_alert(username: str, client_ip: str, user_agent: str):
 🏢 **ISP:** {geo_data.get('isp', 'Unknown')}
 📱 **User Agent:** {user_agent[:100]}...
 
-⚠️ *New login detected - monitor activity*"""
+⚠️ *Action detected: {action.upper()} - monitor activity*"""
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
@@ -362,7 +362,7 @@ async def send_telegram_alert(username: str, client_ip: str, user_agent: str):
 
 @app.post("/api/register")
 @limiter.limit("5/minute")
-async def register(request: Request, req: RegisterRequest):
+async def register(request: Request, req: RegisterRequest, background_tasks: BackgroundTasks):
     try:
         db = database.SessionLocal()
         success = database.create_user(db, req.username, req.password, req.role)
@@ -371,6 +371,11 @@ async def register(request: Request, req: RegisterRequest):
             logger.warning(f"Registration failed: username {req.username} already exists")
             return {"ok": False, "error": "Username already exists."}
         logger.info(f"New user registered: {req.username} with role: {req.role}")
+        
+        client_ip = request.client.host if request.client else "Unknown"
+        user_agent = request.headers.get("User-Agent", "Unknown")
+        background_tasks.add_task(send_telegram_alert, req.username, client_ip, user_agent, "REGISTRATION")
+        
         return {"ok": True}
     except Exception as e:
         logger.error(f"Registration error for {req.username}: {str(e)}")
@@ -400,6 +405,18 @@ async def login(request: Request, req: LoginRequest, background_tasks: Backgroun
         return {"ok": True, "token": token, "role": user.role}
     except Exception as e:
         logger.error(f"Login error for {req.username}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.post("/api/logout")
+async def logout(request: Request, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
+    try:
+        username = current_user["username"]
+        client_ip = request.client.host if request.client else "Unknown"
+        user_agent = request.headers.get("User-Agent", "Unknown")
+        background_tasks.add_task(send_telegram_alert, username, client_ip, user_agent, "LOGOUT")
+        return {"ok": True}
+    except Exception as e:
+        logger.error(f"Logout error for {current_user.get('username')}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 import urllib.parse
