@@ -2,6 +2,6 @@
   "name": "invisi-scan-root",
   "private": true,
   "scripts": {
-    "build": "echo \"Prebuilt locally, skipping cloud build!\""
+    "build": "npm --prefix frontend run build"
   }
 }

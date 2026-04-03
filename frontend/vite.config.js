@@ -30,7 +30,8 @@ export default defineConfig({
         ]
       },
       workbox: {
-        importScripts: ['/custom-sw.js']
+        importScripts: ['/custom-sw.js'],
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024
       }
     })
   ],
