@@ -13,6 +13,7 @@ from pydantic import BaseModel, field_validator, validator
 from typing import Dict, Any, Optional, List
 import httpx
 import jwt
+import pyotp
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -59,6 +60,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 
 # Add parent directory to path so we can import modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -212,22 +214,34 @@ def get_admin_users(request: Request):
     return {"ok": True, "users": res}
 
 @app.delete("/api/admin/users/{user_id}")
-def delete_user(request: Request, user_id: int):
+def delete_user(user_id: int, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required")
     db = database.SessionLocal()
-    db.query(database.User).filter(database.User.id == user_id).delete()
-    db.commit()
-    db.close()
-    return {"ok": True}
+    try:
+        if current_user["username"] == "admin":
+            target = db.query(database.User).filter(database.User.id == user_id).first()
+            if target and target.username == "admin":
+                return {"ok": False, "error": "Default admin cannot be deleted."}
+        db.query(database.User).filter(database.User.id == user_id).delete()
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
 
 @app.put("/api/admin/users/{user_id}/promote")
-def promote_user(request: Request, user_id: int):
+def promote_user(user_id: int, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required")
     db = database.SessionLocal()
-    user = db.query(database.User).filter(database.User.id == user_id).first()
-    if user:
-        user.role = "admin"
-        db.commit()
-    db.close()
-    return {"ok": True}
+    try:
+        user = db.query(database.User).filter(database.User.id == user_id).first()
+        if user:
+            user.role = "admin"
+            db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
 
 scheduler = AsyncIOScheduler()
 
@@ -361,6 +375,35 @@ class RegisterRequest(BaseModel):
             raise ValueError('Role must be operator or admin')
         return v
 
+
+class OtpVerifyRequest(BaseModel):
+    otp_ticket: str
+    otp_code: str
+
+    @field_validator("otp_code")
+    @classmethod
+    def validate_otp_code(cls, v):
+        code = v.strip()
+        if not code.isdigit() or len(code) != 6:
+            raise ValueError("OTP code must be a 6-digit number")
+        return code
+
+
+class TotpSetupVerifyRequest(BaseModel):
+    otp_code: str
+
+    @field_validator("otp_code")
+    @classmethod
+    def validate_otp_code(cls, v):
+        code = v.strip()
+        if not code.isdigit() or len(code) != 6:
+            raise ValueError("OTP code must be a 6-digit number")
+        return code
+
+
+class GoogleAuthRequest(BaseModel):
+    id_token: str
+
 async def send_telegram_alert(username: str, client_ip: str, user_agent: str, action: str = "LOGIN"):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
@@ -393,6 +436,34 @@ async def send_telegram_alert(username: str, client_ip: str, user_agent: str, ac
             await client.post(url, json=payload, timeout=5.0)
         except Exception as e:
             logger.error(f"Failed to send Telegram alert: {e}")
+
+
+def create_access_token(user: database.User, hours: int = 24):
+    token_data = {
+        "sub": user.username,
+        "role": user.role,
+        "exp": datetime.now(timezone.utc) + timedelta(hours=hours),
+    }
+    return jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def create_otp_challenge_token(username: str):
+    token_data = {
+        "sub": username,
+        "purpose": "otp_challenge",
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=10),
+    }
+    return jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def verify_otp_challenge_token(token: str) -> str:
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    if payload.get("purpose") != "otp_challenge":
+        raise HTTPException(status_code=401, detail="Invalid OTP challenge")
+    username = payload.get("sub")
+    if not username:
+        raise HTTPException(status_code=401, detail="Invalid OTP challenge")
+    return username
 
 @app.post("/api/register")
 @limiter.limit("5/minute")
@@ -432,14 +503,160 @@ async def login(request: Request, req: LoginRequest, background_tasks: Backgroun
         user_agent = request.headers.get("User-Agent", "Unknown")
         background_tasks.add_task(send_telegram_alert, req.username, client_ip, user_agent)
 
-        # Generate JWT Token
-        token_data = {"sub": user.username, "role": user.role, "exp": datetime.now(timezone.utc) + timedelta(hours=24)}
-        token = jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
+        if user.is_totp_enabled:
+            otp_ticket = create_otp_challenge_token(user.username)
+            return {
+                "ok": True,
+                "otp_required": True,
+                "otp_ticket": otp_ticket,
+                "message": "OTP verification required",
+            }
 
-        return {"ok": True, "token": token, "role": user.role}
+        token = create_access_token(user)
+        return {"ok": True, "token": token, "role": user.role, "username": user.username}
     except Exception as e:
         logger.error(f"Login error for {req.username}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.post("/api/login/verify-otp")
+@limiter.limit("10/minute")
+async def verify_login_otp(request: Request, req: OtpVerifyRequest):
+    try:
+        username = verify_otp_challenge_token(req.otp_ticket)
+
+        db = database.SessionLocal()
+        user = database.get_user_by_username(db, username)
+        if not user or not user.totp_secret or not user.is_totp_enabled:
+            db.close()
+            return {"ok": False, "error": "OTP is not configured for this account."}
+
+        is_valid = pyotp.TOTP(user.totp_secret).verify(req.otp_code, valid_window=1)
+        db.close()
+        if not is_valid:
+            return {"ok": False, "error": "Invalid OTP code."}
+
+        token = create_access_token(user)
+        return {"ok": True, "token": token, "role": user.role, "username": user.username}
+    except jwt.ExpiredSignatureError:
+        return {"ok": False, "error": "OTP challenge expired. Please login again."}
+    except jwt.InvalidTokenError:
+        return {"ok": False, "error": "Invalid OTP challenge. Please login again."}
+    except Exception as e:
+        logger.error(f"OTP verification error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.post("/api/auth/google")
+@limiter.limit("10/minute")
+async def login_with_google(request: Request, req: GoogleAuthRequest, background_tasks: BackgroundTasks):
+    try:
+        async with httpx.AsyncClient() as client:
+            verify_res = await client.get(
+                "https://oauth2.googleapis.com/tokeninfo",
+                params={"id_token": req.id_token},
+                timeout=8.0,
+            )
+
+        if verify_res.status_code != 200:
+            return {"ok": False, "error": "Invalid Google token."}
+
+        token_info = verify_res.json()
+        audience = token_info.get("aud")
+        issuer = token_info.get("iss")
+        google_id = token_info.get("sub")
+        email = token_info.get("email", "")
+        email_verified = token_info.get("email_verified")
+        name = token_info.get("name", "")
+
+        if GOOGLE_CLIENT_ID and audience != GOOGLE_CLIENT_ID:
+            return {"ok": False, "error": "Google token audience mismatch."}
+        if issuer not in {"accounts.google.com", "https://accounts.google.com"}:
+            return {"ok": False, "error": "Invalid Google token issuer."}
+        if not google_id or not email:
+            return {"ok": False, "error": "Google token missing required claims."}
+        if str(email_verified).lower() not in {"true", "1"}:
+            return {"ok": False, "error": "Google email is not verified."}
+
+        db = database.SessionLocal()
+        user = database.create_or_update_google_user(db, google_id=google_id, email=email, name=name)
+        db.close()
+
+        client_ip = request.client.host if request.client else "Unknown"
+        user_agent = request.headers.get("User-Agent", "Unknown")
+        background_tasks.add_task(send_telegram_alert, user.username, client_ip, user_agent, "GOOGLE_LOGIN")
+
+        token = create_access_token(user)
+        return {"ok": True, "token": token, "role": user.role, "username": user.username}
+    except Exception as e:
+        logger.error(f"Google login error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.get("/api/2fa/status")
+def get_totp_status(current_user: dict = Depends(get_current_user)):
+    db = database.SessionLocal()
+    try:
+        user = database.get_user_by_username(db, current_user["username"])
+        if not user:
+            return {"ok": False, "error": "User not found."}
+        return {"ok": True, "is_totp_enabled": bool(user.is_totp_enabled)}
+    finally:
+        db.close()
+
+
+@app.post("/api/2fa/setup")
+def setup_totp(current_user: dict = Depends(get_current_user)):
+    db = database.SessionLocal()
+    try:
+        user = database.get_user_by_username(db, current_user["username"])
+        if not user:
+            return {"ok": False, "error": "User not found."}
+
+        secret = user.totp_secret or pyotp.random_base32()
+        user.totp_secret = secret
+        user.is_totp_enabled = False
+        db.commit()
+
+        issuer = "Invisi-Scan"
+        otpauth_uri = pyotp.TOTP(secret).provisioning_uri(name=user.username, issuer_name=issuer)
+        return {"ok": True, "otpauth_uri": otpauth_uri, "secret": secret}
+    finally:
+        db.close()
+
+
+@app.post("/api/2fa/enable")
+def enable_totp(req: TotpSetupVerifyRequest, current_user: dict = Depends(get_current_user)):
+    db = database.SessionLocal()
+    try:
+        user = database.get_user_by_username(db, current_user["username"])
+        if not user or not user.totp_secret:
+            return {"ok": False, "error": "TOTP is not initialized. Run setup first."}
+
+        is_valid = pyotp.TOTP(user.totp_secret).verify(req.otp_code, valid_window=1)
+        if not is_valid:
+            return {"ok": False, "error": "Invalid OTP code."}
+
+        user.is_totp_enabled = True
+        db.commit()
+        return {"ok": True, "is_totp_enabled": True}
+    finally:
+        db.close()
+
+
+@app.post("/api/2fa/disable")
+def disable_totp(current_user: dict = Depends(get_current_user)):
+    db = database.SessionLocal()
+    try:
+        user = database.get_user_by_username(db, current_user["username"])
+        if not user:
+            return {"ok": False, "error": "User not found."}
+        user.is_totp_enabled = False
+        user.totp_secret = None
+        db.commit()
+        return {"ok": True, "is_totp_enabled": False}
+    finally:
+        db.close()
 
 @app.post("/api/logout")
 async def logout(request: Request, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):

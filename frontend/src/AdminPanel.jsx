@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Shield, Trash2, ArrowUpCircle } from 'lucide-react';
 
 export default function AdminPanel({ authData }) {
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001';
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8001'}/api/admin/users`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/users`, {
         headers: { 'Authorization': `Bearer ${authData.token}` }
       });
       const data = await res.json();
@@ -20,7 +21,7 @@ export default function AdminPanel({ authData }) {
   useEffect(() => { fetchUsers(); }, []);
 
   const handleDelete = async (id) => {
-    await fetch(`http://localhost:8000/api/admin/users/${id}`, {
+    await fetch(`${API_BASE_URL}/api/admin/users/${id}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${authData.token}` }
     });
@@ -28,7 +29,7 @@ export default function AdminPanel({ authData }) {
   };
 
   const handlePromote = async (id) => {
-    await fetch(`http://localhost:8000/api/admin/users/${id}/promote`, {
+    await fetch(`${API_BASE_URL}/api/admin/users/${id}/promote`, {
       method: 'PUT',
       headers: { 'Authorization': `Bearer ${authData.token}` }
     });

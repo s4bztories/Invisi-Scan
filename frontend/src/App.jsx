@@ -151,6 +151,66 @@ function Login({ onLogin }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
+  const googleButtonRef = useRef(null);
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+
+  useEffect(() => {
+    if (isRegistering || !googleClientId) return undefined;
+
+    const initGoogle = () => {
+      if (!window.google?.accounts?.id || !googleButtonRef.current) return;
+      window.google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: async (response) => {
+          setLoading(true);
+          setError('');
+          try {
+            const res = await fetch(`${API_BASE_URL}/api/auth/google`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id_token: response.credential }),
+            });
+            const data = await res.json();
+            if (data.ok && data.token) {
+              onLogin(data);
+            } else {
+              setError(data.error || 'Google sign-in failed');
+            }
+          } catch (err) {
+            console.error(err);
+            setError('Google sign-in failed');
+          } finally {
+            setLoading(false);
+          }
+        }
+      });
+
+      googleButtonRef.current.innerHTML = '';
+      window.google.accounts.id.renderButton(googleButtonRef.current, {
+        type: 'standard',
+        theme: 'outline',
+        size: 'large',
+        text: 'signin_with',
+        shape: 'pill',
+        width: 360
+      });
+    };
+
+    const existingScript = document.getElementById('google-identity-script');
+    if (existingScript) {
+      initGoogle();
+      return undefined;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.id = 'google-identity-script';
+    script.onload = initGoogle;
+    document.head.appendChild(script);
+    return undefined;
+  }, [googleClientId, isRegistering, onLogin]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -172,7 +232,11 @@ function Login({ onLogin }) {
             setIsRegistering(false);
             setPassword('');
         } else {
-            onLogin(data);
+            if (data.otp_required) {
+              setError('OTP-enabled accounts require OTP verification flow in UI.');
+            } else {
+              onLogin(data);
+            }
         }
       } else {
         setError(data.error || 'Request failed');
@@ -244,6 +308,21 @@ function Login({ onLogin }) {
             {loading ? <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin"></div> : <Unlock className="w-5 h-5" />}
             {isRegistering ? 'Create Account' : 'Login'}
           </button>
+
+          {!isRegistering && (
+            <>
+              <div className="text-center text-[11px] uppercase tracking-widest text-slate-500">or</div>
+              {googleClientId ? (
+                <div className="flex justify-center">
+                  <div ref={googleButtonRef} />
+                </div>
+              ) : (
+                <div className="text-center text-xs text-amber-300/80 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
+                  Add `VITE_GOOGLE_CLIENT_ID` in frontend env to enable Google Sign-In.
+                </div>
+              )}
+            </>
+          )}
           
           <div className="text-center mt-6">
              <button 
