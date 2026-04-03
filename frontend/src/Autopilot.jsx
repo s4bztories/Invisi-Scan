@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Clock, Plus, Trash2, Globe, ShieldCheck } from 'lucide-react';
 
 export default function Autopilot({ authData }) {
@@ -7,7 +7,7 @@ export default function Autopilot({ authData }) {
   const [intervalOption, setIntervalOption] = useState(24);
   const [loading, setLoading] = useState(true);
 
-  const fetchScans = async () => {
+  const fetchScans = useCallback(async () => {
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8001'}/api/schedule`, {
         headers: { 'Authorization': `Bearer ${authData.token}` }
@@ -17,11 +17,11 @@ export default function Autopilot({ authData }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [authData.token]);
 
   useEffect(() => {
     fetchScans();
-  }, []);
+  }, [fetchScans]);
 
   const handleAdd = async (e) => {
     e.preventDefault();
@@ -48,12 +48,12 @@ export default function Autopilot({ authData }) {
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-12 w-full">
-      <div className="glass-panel p-8">
+      <div className="surface-card p-8">
         <h2 className="text-xl font-bold text-white flex items-center gap-3 mb-6">
           <Clock className="w-6 h-6 text-indigo-400" />
           Autopilot Engine
         </h2>
-        <p className="text-sm text-slate-400 mb-8 leading-relaxed">
+        <p className="subtle-text mb-8">
           Configure continuous, headless vulnerability assessments. The Python backend scheduler will autonomously port-scan and fingerprint targets on your defined interval, routing the output silently into the encrypted `SQLite` datastore.
         </p>
 
@@ -86,8 +86,8 @@ export default function Autopilot({ authData }) {
         </form>
       </div>
 
-      <div className="glass-panel p-8 min-h-[300px]">
-        <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-widest mb-6">Active Autonomous Directives</h3>
+      <div className="surface-card p-8 min-h-[300px]">
+        <h3 className="section-title mb-6">Active Autonomous Directives</h3>
         
         {loading ? (
           <div className="text-center py-10 text-slate-500 animate-pulse">Syncing chronological schedules...</div>

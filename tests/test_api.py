@@ -1,75 +1,86 @@
-import pytest
-import sys
 import os
+import sys
+import time
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from backend.api import app
 from fastapi.testclient import TestClient
+
+# Prevent network side effects in tests.
+os.environ["TELEGRAM_BOT_TOKEN"] = ""
+os.environ["TELEGRAM_CHAT_ID"] = ""
+os.environ["ALLOWED_ORIGINS"] = "https://invisi-scan-three.vercel.app,http://localhost:5174"
+
+from backend.api import app
 
 client = TestClient(app)
 
+
+def _fresh_username() -> str:
+    return f"testuser_{int(time.time() * 1000)}"
+
+
 def test_root_endpoint():
-    """Test the root API endpoint returns correct status."""
     response = client.get("/")
     assert response.status_code == 200
     assert response.json() == {"status": "Invisi-Scan API is running"}
 
-def test_history_endpoint():
-    """Test the history endpoint (requires auth in real usage)."""
-    response = client.get("/api/history")
-    # This might require authentication, but test basic response
-    assert response.status_code in [200, 401, 403]  # Allow auth failures for now
 
-def test_register_endpoint():
-    """Test user registration."""
-    test_user = {
-        "username": "testuser",
-        "password": "testpass123",
-        "role": "operator"
-    }
-    response = client.post("/api/register", json=test_user)
-    assert response.status_code in [200, 400]  # 400 if user exists
+def test_register_login_flow():
+    username = _fresh_username()
+    password = "testpass123"
 
-def test_login_endpoint():
-    """Test user login."""
-    credentials = {
-        "username": "operator",
-        "password": "operator123"
-    }
-    response = client.post("/api/login", json=credentials)
-    assert response.status_code in [200, 401]  # 401 if invalid creds
+    register_res = client.post("/api/register", json={"username": username, "password": password})
+    assert register_res.status_code == 200
+    assert register_res.json()["ok"] is True
 
-def test_input_validation():
-    """Test input validation for various endpoints."""
-    # Test invalid login
-    response = client.post("/api/login", json={"username": "", "password": "short"})
-    assert response.status_code == 422  # Validation error
+    login_res = client.post("/api/login", json={"username": username, "password": password})
+    assert login_res.status_code == 200
+    data = login_res.json()
+    assert data["ok"] is True
+    assert "token" in data
+    assert data["role"] == "operator"
+    assert data["username"] == username
 
-    # Test invalid register
-    response = client.post("/api/register", json={"username": "ab", "password": "12345", "role": "invalid"})
+
+def test_register_cannot_set_admin_role():
+    username = _fresh_username()
+    password = "testpass123"
+    res = client.post(
+        "/api/register",
+        json={"username": username, "password": password, "role": "admin"},
+    )
+    assert res.status_code == 200
+    assert res.json()["ok"] is True
+
+    login_res = client.post("/api/login", json={"username": username, "password": password})
+    assert login_res.status_code == 200
+    assert login_res.json().get("role") == "operator"
+
+
+def test_validation_and_auth_guards():
+    bad_login = client.post("/api/login", json={"username": "", "password": "123"})
+    assert bad_login.status_code == 422
+
+    bad_register = client.post("/api/register", json={"username": "ab", "password": "12345"})
+    assert bad_register.status_code == 422
+
+    schedule_without_auth = client.post("/api/schedule", json={"target": "example.com", "interval": 24})
+    assert schedule_without_auth.status_code in {401, 403}
+
+
+def test_google_auth_requires_id_token():
+    response = client.post("/api/auth/google", json={})
     assert response.status_code == 422
 
-    # Test invalid schedule (will fail auth, but validation should happen first)
-    # Note: This will return 401 due to auth, not 422 for validation
-    response = client.post("/api/schedule", json={"target": "", "interval": 200})
-    assert response.status_code in [401, 422]  # Either auth failure or validation
 
-def test_rate_limiting():
-    """Test rate limiting on auth endpoints."""
-    # Multiple rapid login attempts
-    for i in range(10):
-        response = client.post("/api/login", json={"username": "test", "password": "test"})
-        if response.status_code == 429:  # Rate limited
-            break
-    # Should eventually get rate limited (though test client might not enforce it perfectly)
-
-def test_cors_headers():
-    """Test CORS middleware is configured."""
-    # CORS should be configured in the app
-    from backend.api import app
-    cors_middleware = None
-    for middleware in app.user_middleware:
-        if hasattr(middleware, 'cls') and 'CORSMiddleware' in str(middleware.cls):
-            cors_middleware = middleware
-            break
-    assert cors_middleware is not None, "CORS middleware should be configured"
+def test_cors_preflight_for_known_origin():
+    response = client.options(
+        "/api/auth/google",
+        headers={
+            "Origin": "https://invisi-scan-three.vercel.app",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "https://invisi-scan-three.vercel.app"

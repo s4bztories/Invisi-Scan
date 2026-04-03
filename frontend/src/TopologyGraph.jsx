@@ -1,113 +1,124 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import ForceGraph2D from 'react-force-graph-2d';
+import React, { useMemo } from 'react';
+
+const NODE_COLORS = {
+  target: '#818cf8',
+  subdomain: '#60a5fa',
+  ip: '#a78bfa',
+  port: '#34d399',
+  cve: '#f87171',
+};
+
+const WIDTH = 1200;
+const HEIGHT = 420;
+
+function truncate(label, max = 22) {
+  if (!label) return '';
+  return label.length > max ? `${label.slice(0, max - 1)}…` : label;
+}
 
 export default function TopologyGraph({ data }) {
-  const containerRef = useRef(null);
-  const fgRef = useRef();
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-  const [graphData, setGraphData] = useState({ nodes: [], links: [] });
+  const { nodes, links } = useMemo(() => {
+    if (!data) return { nodes: [], links: [] };
 
-  useEffect(() => {
-    if (containerRef.current) {
-      setDimensions({
-        width: containerRef.current.clientWidth,
-        height: 400
+    const items = [];
+    const edges = [];
+
+    const targetNode = { id: 'target', type: 'target', label: data.target || 'Target', x: 140, y: HEIGHT / 2 };
+    items.push(targetNode);
+
+    const ipNode = { id: 'ip', type: 'ip', label: data.geolocation?.ip || 'Unknown IP', x: 420, y: HEIGHT / 2 };
+    items.push(ipNode);
+    edges.push({ from: 'target', to: 'ip' });
+
+    const subdomains = (data.subdomains || []).slice(0, 10);
+    subdomains.forEach((sub, i) => {
+      const spacing = HEIGHT / (subdomains.length + 1);
+      const node = {
+        id: `sub-${i}`,
+        type: 'subdomain',
+        label: sub,
+        x: 420,
+        y: spacing * (i + 1),
+      };
+      items.push(node);
+      edges.push({ from: 'target', to: node.id });
+    });
+
+    const ports = (data.open_ports || []).slice(0, 14);
+    ports.forEach((port, i) => {
+      const spacing = HEIGHT / (ports.length + 1);
+      const portNode = {
+        id: `port-${port}`,
+        type: 'port',
+        label: `Port ${port}`,
+        x: 700,
+        y: spacing * (i + 1),
+      };
+      items.push(portNode);
+      edges.push({ from: 'ip', to: portNode.id });
+
+      const cves = (data.cves?.[port] || []).slice(0, 2);
+      cves.forEach((cve, idx) => {
+        const cveNode = {
+          id: `cve-${port}-${idx}`,
+          type: 'cve',
+          label: cve.id || 'CVE',
+          x: 980,
+          y: Math.max(26, Math.min(HEIGHT - 26, portNode.y + (idx === 0 ? -16 : 16))),
+        };
+        items.push(cveNode);
+        edges.push({ from: portNode.id, to: cveNode.id });
       });
-    }
-  }, []);
+    });
 
-  useEffect(() => {
-    if (!data) return;
-
-    const nodes = [];
-    const links = [];
-
-    // Target root node
-    nodes.push({ id: 'target', group: 1, label: data.target || "Target", val: 5 });
-
-    // Subdomains mapping
-    if (data.subdomains && data.subdomains.length > 0) {
-        data.subdomains.forEach((sub, i) => {
-            nodes.push({ id: `sub-${i}`, group: 2, label: sub, val: 3 });
-            links.push({ source: 'target', target: `sub-${i}` });
-        });
-    }
-
-    // IP node
-    nodes.push({ id: 'ip', group: 3, label: data.geolocation?.ip || "Unknown IP", val: 4 });
-    links.push({ source: 'target', target: 'ip' });
-
-    // Open ports mapping from IP
-    if (data.open_ports) {
-        data.open_ports.forEach(port => {
-            nodes.push({ id: `port-${port}`, group: 4, label: `Port ${port}`, val: 2 });
-            links.push({ source: 'ip', target: `port-${port}` });
-            
-            // CVE mapping
-            if (data.cves && data.cves[port]) {
-                data.cves[port].forEach((cve, i) => {
-                    nodes.push({ id: `cve-${port}-${i}`, group: 5, label: cve.id, val: 1 });
-                    links.push({ source: `port-${port}`, target: `cve-${port}-${i}` });
-                });
-            }
-        });
-    }
-
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setGraphData({ nodes, links });
+    return { nodes: items, links: edges };
   }, [data]);
 
-  const handleNodeClick = useCallback(node => {
-     if (fgRef.current) {
-        fgRef.current.centerAt(node.x, node.y, 1000);
-        fgRef.current.zoom(4, 1000);
-     }
-  }, []);
+  const byId = useMemo(() => {
+    const map = new Map();
+    nodes.forEach((n) => map.set(n.id, n));
+    return map;
+  }, [nodes]);
 
-  const lastTapRef = useRef(0);
-  const handleBackgroundClick = useCallback(() => {
-     const now = Date.now();
-     if (now - lastTapRef.current < 300) {
-        if (fgRef.current) {
-           fgRef.current.zoomToFit(400, 50);
-        }
-     }
-     lastTapRef.current = now;
-  }, []);
+  if (nodes.length === 0) {
+    return <div className="surface-card p-10 text-center text-slate-400">No topology data available yet.</div>;
+  }
 
   return (
-    <div ref={containerRef} className="w-full h-[400px] border border-white/5 bg-black/40 rounded-xl overflow-hidden relative">
-      <div className="absolute top-4 left-4 z-10 text-xs font-semibold text-slate-400 flex gap-4">
-         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-indigo-500"></span> Primary</span>
-         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-400"></span> Surface</span>
-         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400"></span> Service</span>
-         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400"></span> Vulns</span>
+    <div className="surface-card p-4 overflow-x-auto">
+      <div className="flex flex-wrap gap-4 text-xs text-slate-400 mb-3 px-1">
+        <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-indigo-400" /> Target</span>
+        <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-purple-400" /> IP</span>
+        <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-blue-400" /> Surface</span>
+        <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-400" /> Ports</span>
+        <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-rose-400" /> CVEs</span>
       </div>
-      {dimensions.width > 0 && graphData.nodes.length > 0 && (
-        <ForceGraph2D
-          ref={fgRef}
-          width={dimensions.width}
-          height={dimensions.height}
-          graphData={graphData}
-          nodeLabel="label"
-          onNodeClick={handleNodeClick}
-          onBackgroundClick={handleBackgroundClick}
-          nodeColor={node => {
-            switch(node.group) {
-              case 1: return '#6366f1'; // Indigo Root
-              case 2: return '#60a5fa'; // Blue Subdomains
-              case 3: return '#a855f7'; // Purple IP
-              case 4: return '#34d399'; // Emerald Ports
-              case 5: return '#f87171'; // Red CVEs
-              default: return '#cbd5e1';
-            }
-          }}
-          linkColor={() => 'rgba(255, 255, 255, 0.1)'}
-          backgroundColor="transparent"
-          d3VelocityDecay={0.8}
-          warmupTicks={50}
-        />
-      )}
+      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="w-full min-w-[860px] h-[390px]">
+        {links.map((edge) => {
+          const from = byId.get(edge.from);
+          const to = byId.get(edge.to);
+          if (!from || !to) return null;
+          return (
+            <line
+              key={`${edge.from}-${edge.to}`}
+              x1={from.x}
+              y1={from.y}
+              x2={to.x}
+              y2={to.y}
+              stroke="rgba(148,163,184,0.25)"
+              strokeWidth="1.5"
+            />
+          );
+        })}
+        {nodes.map((node) => (
+          <g key={node.id}>
+            <circle cx={node.x} cy={node.y} r={node.type === 'target' || node.type === 'ip' ? 8 : 6} fill={NODE_COLORS[node.type]} />
+            <text x={node.x + 10} y={node.y + 4} fill="#cbd5e1" fontSize="12" fontFamily="ui-sans-serif, system-ui">
+              {truncate(node.label)}
+            </text>
+          </g>
+        ))}
+      </svg>
     </div>
   );
 }

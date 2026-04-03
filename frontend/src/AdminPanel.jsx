@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Shield, Trash2, ArrowUpCircle } from 'lucide-react';
 
 export default function AdminPanel({ authData }) {
@@ -6,7 +6,7 @@ export default function AdminPanel({ authData }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/admin/users`, {
         headers: { 'Authorization': `Bearer ${authData.token}` }
@@ -16,9 +16,9 @@ export default function AdminPanel({ authData }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [API_BASE_URL, authData.token]);
 
-  useEffect(() => { fetchUsers(); }, []);
+  useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
   const handleDelete = async (id) => {
     await fetch(`${API_BASE_URL}/api/admin/users/${id}`, {
@@ -42,7 +42,7 @@ export default function AdminPanel({ authData }) {
 
   return (
     <div className="max-w-5xl mx-auto pb-12 w-full">
-      <div className="glass-panel p-8">
+      <div className="surface-card p-8">
          <h2 className="text-xl font-bold text-white flex items-center gap-3 mb-6">
           <Shield className="w-6 h-6 text-indigo-400" />
           Access Control Matrix

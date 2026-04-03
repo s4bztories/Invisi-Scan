@@ -19,7 +19,7 @@ export default function DiffModal({ data, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="bg-[#0f0f13] border border-white/10 rounded-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl">
+      <div className="surface-card bg-[#0f0f13] w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl">
         
         <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
           <div>
