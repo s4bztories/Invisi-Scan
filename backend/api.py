@@ -9,7 +9,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPExcept
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from pydantic import BaseModel, field_validator, validator
+from pydantic import BaseModel, field_validator
 from typing import Dict, Any, Optional, List
 import httpx
 import jwt
@@ -21,7 +21,8 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from contextlib import asynccontextmanager
 
-SECRET_KEY = "super-secret-soc-key-change-in-prod"
+load_dotenv()
+SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-soc-key-change-in-prod")
 ALGORITHM = "HS256"
 
 # Configure logging
@@ -57,10 +58,17 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 
 
 # Load secret environment variables
-load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "ALLOWED_ORIGINS",
+        "http://localhost:5173,http://localhost:5174,https://invisi-scan-three.vercel.app",
+    ).split(",")
+    if origin.strip()
+]
 
 # Add parent directory to path so we can import modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -120,7 +128,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # Allow CORS for the Vite frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -317,16 +325,16 @@ def add_schedule(req: ScheduleRequest, current_user: dict = Depends(get_current_
 @app.delete("/api/schedule/{scan_id}")
 def delete_schedule(scan_id: int, current_user: dict = Depends(get_current_user)):
     try:
-        # Check if user owns this scan or is admin
         role = current_user["role"]
         username = current_user["username"]
-        if role != "admin":
-            # Additional check would be needed here for ownership
-            pass
-        database.delete_scheduled_scan(scan_id)
+        deleted = database.delete_scheduled_scan(scan_id, role=role, username=username)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Scheduled scan not found")
         reload_scheduler()
         logger.info(f"Deleted scheduled scan {scan_id} by user: {username}")
         return {"ok": True}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error deleting scheduled scan {scan_id} for {current_user['username']}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -352,7 +360,6 @@ class LoginRequest(BaseModel):
 class RegisterRequest(BaseModel):
     username: str
     password: str
-    role: str = "operator"
 
     @field_validator('username')
     @classmethod
@@ -367,14 +374,6 @@ class RegisterRequest(BaseModel):
         if not v or len(v) < 6:
             raise ValueError('Password must be at least 6 characters')
         return v
-
-    @field_validator('role')
-    @classmethod
-    def validate_role(cls, v):
-        if v not in ['operator', 'admin']:
-            raise ValueError('Role must be operator or admin')
-        return v
-
 
 class OtpVerifyRequest(BaseModel):
     otp_ticket: str
@@ -470,12 +469,12 @@ def verify_otp_challenge_token(token: str) -> str:
 async def register(request: Request, req: RegisterRequest, background_tasks: BackgroundTasks):
     try:
         db = database.SessionLocal()
-        success = database.create_user(db, req.username, req.password, req.role)
+        success = database.create_user(db, req.username, req.password, "operator")
         db.close()
         if not success:
             logger.warning(f"Registration failed: username {req.username} already exists")
             return {"ok": False, "error": "Username already exists."}
-        logger.info(f"New user registered: {req.username} with role: {req.role}")
+        logger.info(f"New user registered: {req.username} with role: operator")
         
         client_ip = request.client.host if request.client else "Unknown"
         user_agent = request.headers.get("User-Agent", "Unknown")
@@ -568,6 +567,7 @@ async def login_with_google(request: Request, req: GoogleAuthRequest, background
         email = token_info.get("email", "")
         email_verified = token_info.get("email_verified")
         name = token_info.get("name", "")
+        exp = token_info.get("exp")
 
         if GOOGLE_CLIENT_ID and audience != GOOGLE_CLIENT_ID:
             return {"ok": False, "error": "Google token audience mismatch."}
@@ -577,6 +577,11 @@ async def login_with_google(request: Request, req: GoogleAuthRequest, background
             return {"ok": False, "error": "Google token missing required claims."}
         if str(email_verified).lower() not in {"true", "1"}:
             return {"ok": False, "error": "Google email is not verified."}
+        try:
+            if exp and datetime.now(timezone.utc).timestamp() > int(exp):
+                return {"ok": False, "error": "Google token is expired."}
+        except ValueError:
+            return {"ok": False, "error": "Google token expiry is invalid."}
 
         db = database.SessionLocal()
         user = database.create_or_update_google_user(db, google_id=google_id, email=email, name=name)

@@ -1,12 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { lazy, Suspense, useMemo, useState, useEffect, useRef } from 'react';
 import { Terminal, Shield, AlertTriangle, CheckCircle, Activity, Lock, Unlock, Server, Download, KeyRound, LogOut, History, Crosshair, Globe, Target } from 'lucide-react';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import TopologyGraph from './TopologyGraph';
-import DiffModal from './DiffModal';
-import AnalyticsDashboard from './AnalyticsDashboard';
-import Autopilot from './Autopilot';
-import AdminPanel from './AdminPanel';
+
+const TopologyGraph = lazy(() => import('./TopologyGraph'));
+const DiffModal = lazy(() => import('./DiffModal'));
+const AnalyticsDashboard = lazy(() => import('./AnalyticsDashboard'));
+const Autopilot = lazy(() => import('./Autopilot'));
+const AdminPanel = lazy(() => import('./AdminPanel'));
 
 const ParticleNetwork3D = () => {
   const canvasRef = useRef(null);
@@ -65,7 +64,7 @@ const ParticleNetwork3D = () => {
 
     const init = () => {
       particles = [];
-      const particleCount = Math.min(Math.floor((width * height) / 12000), 120);
+      const particleCount = Math.min(Math.floor((width * height) / 18000), 80);
       for (let i = 0; i < particleCount; i++) {
         particles.push(new Particle());
       }
@@ -144,6 +143,10 @@ const ParticleNetwork3D = () => {
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001';
+
+function SectionLoader({ text = 'Loading...' }) {
+  return <div className="text-center py-10 text-slate-400 animate-pulse">{text}</div>;
+}
 
 function Login({ onLogin }) {
   const [username, setUsername] = useState('');
@@ -373,6 +376,17 @@ function Dashboard({ authData, onLogout }) {
   const logsEndRef = useRef(null);
 
   const { username, role } = authData;
+  const previousByTarget = useMemo(() => {
+    const map = new Map();
+    for (const item of historyList) {
+      const existing = map.get(item.target);
+      if (!existing) {
+        map.set(item.target, []);
+      }
+      map.get(item.target).push(item);
+    }
+    return map;
+  }, [historyList]);
 
   useEffect(() => {
     if (activeTab === 'history') {
@@ -538,6 +552,12 @@ function Dashboard({ authData, onLogout }) {
 
   const handleExportPdf = async () => {
     if (!reportData) return;
+    const [{ default: jsPDF }, autoTableModule] = await Promise.all([
+      import('jspdf'),
+      import('jspdf-autotable'),
+    ]);
+    const autoTable = autoTableModule.default || autoTableModule.autoTable;
+
     const doc = new jsPDF();
     doc.setFont("helvetica", "bold");
     doc.setFontSize(20);
@@ -711,11 +731,17 @@ function Dashboard({ authData, onLogout }) {
         </header>
         
         {activeTab === 'analytics' ? (
-           <AnalyticsDashboard authData={authData} />
+           <Suspense fallback={<SectionLoader text="Loading command center..." />}>
+             <AnalyticsDashboard authData={authData} />
+           </Suspense>
         ) : activeTab === 'autopilot' ? (
-           <Autopilot authData={authData} />
+           <Suspense fallback={<SectionLoader text="Loading autopilot..." />}>
+             <Autopilot authData={authData} />
+           </Suspense>
         ) : activeTab === 'admin' ? (
-           <AdminPanel authData={authData} />
+           <Suspense fallback={<SectionLoader text="Loading admin panel..." />}>
+             <AdminPanel authData={authData} />
+           </Suspense>
         ) : activeTab === 'scanner' ? (
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
             {/* Left Column Controls */}
@@ -853,7 +879,9 @@ function Dashboard({ authData, onLogout }) {
                 <div className="mb-8 relative group">
                    <div className="absolute -inset-1 bg-gradient-to-b from-indigo-500/10 to-transparent blur-xl opacity-50 pointer-events-none rounded-[3rem]"></div>
                    <div className="relative z-10">
-                     <TopologyGraph data={reportData} />
+                     <Suspense fallback={<SectionLoader text="Loading topology graph..." />}>
+                       <TopologyGraph data={reportData} />
+                     </Suspense>
                    </div>
                 </div>
               )}
@@ -1068,10 +1096,12 @@ function Dashboard({ authData, onLogout }) {
                         >
                           Review Data
                         </button>
-                        {historyList.filter(h => h.target === item.target && new Date(h.timestamp) < new Date(item.timestamp)).length > 0 && (
+                        {(previousByTarget.get(item.target) || []).some(h => new Date(h.timestamp) < new Date(item.timestamp)) && (
                           <button 
                             onClick={() => {
-                               const sortedHistory = historyList.filter(h => h.target === item.target && new Date(h.timestamp) < new Date(item.timestamp)).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+                               const sortedHistory = (previousByTarget.get(item.target) || [])
+                                 .filter(h => new Date(h.timestamp) < new Date(item.timestamp))
+                                 .sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
                                if (sortedHistory.length > 0) {
                                   setDiffData({ older: sortedHistory[0], newer: item });
                                }
@@ -1091,7 +1121,11 @@ function Dashboard({ authData, onLogout }) {
         </div>
       )}
       
-      {diffData && <DiffModal data={diffData} onClose={() => setDiffData(null)} />}
+      {diffData && (
+        <Suspense fallback={<SectionLoader text="Loading comparison..." />}>
+          <DiffModal data={diffData} onClose={() => setDiffData(null)} />
+        </Suspense>
+      )}
       </div>
       
       {/* Mobile Bottom Navigation Bar */}

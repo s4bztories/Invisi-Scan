@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import json
 import os
 from datetime import datetime
@@ -8,7 +10,19 @@ from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, create_
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-FERNET_KEY = os.getenv("FERNET_KEY", Fernet.generate_key().decode())
+# Keep encryption key stable across restarts. Falling back to a deterministic
+# key derived from SECRET_KEY avoids unreadable historical data when FERNET_KEY
+# is not explicitly configured.
+def _resolve_fernet_key() -> str:
+    key = os.getenv("FERNET_KEY")
+    if key:
+        return key
+    secret = os.getenv("SECRET_KEY", "super-secret-soc-key-change-in-prod")
+    digest = hashlib.sha256(secret.encode()).digest()
+    return base64.urlsafe_b64encode(digest).decode()
+
+
+FERNET_KEY = _resolve_fernet_key()
 fernet = Fernet(FERNET_KEY.encode())
 
 DATABASE_URL = "sqlite:///./soc_scans.db"
@@ -280,13 +294,18 @@ def get_scheduled_scans(role: str = "admin", username: str = ""):
         db.close()
 
 
-def delete_scheduled_scan(scan_id: int):
+def delete_scheduled_scan(scan_id: int, role: str = "operator", username: str = ""):
     db = SessionLocal()
     try:
-        scan = db.query(AutopilotScan).filter(AutopilotScan.id == scan_id).first()
+        query = db.query(AutopilotScan).filter(AutopilotScan.id == scan_id)
+        if role != "admin":
+            query = query.filter(AutopilotScan.operator == username)
+        scan = query.first()
         if scan:
             db.delete(scan)
             db.commit()
+            return True
+        return False
     finally:
         db.close()
 
