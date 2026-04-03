@@ -501,6 +501,14 @@ class TotpSetupVerifyRequest(BaseModel):
 class GoogleAuthRequest(BaseModel):
     id_token: str
 
+    @field_validator("id_token")
+    @classmethod
+    def validate_id_token(cls, v):
+        token = v.strip()
+        if not token:
+            raise ValueError("Google ID token is required")
+        return token
+
 
 class ClientErrorEvent(BaseModel):
     message: str
@@ -672,11 +680,11 @@ async def verify_login_otp(request: Request, req: OtpVerifyRequest):
 @limiter.limit("10/minute")
 async def login_with_google(request: Request, req: GoogleAuthRequest, background_tasks: BackgroundTasks):
     try:
-        async with httpx.AsyncClient() as client:
+        timeout = httpx.Timeout(connect=2.0, read=3.0, write=3.0, pool=2.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
             verify_res = await client.get(
                 "https://oauth2.googleapis.com/tokeninfo",
                 params={"id_token": req.id_token},
-                timeout=8.0,
             )
 
         if verify_res.status_code != 200:
@@ -715,6 +723,12 @@ async def login_with_google(request: Request, req: GoogleAuthRequest, background
 
         token = create_access_token(user)
         return {"ok": True, "token": token, "role": user.role, "username": user.username}
+    except httpx.TimeoutException:
+        logger.warning("Google login timed out while verifying token with Google")
+        return {"ok": False, "error": "Google sign-in timed out. Please try again."}
+    except httpx.HTTPError as e:
+        logger.warning(f"Google login verification request failed: {str(e)}")
+        return {"ok": False, "error": "Unable to reach Google sign-in service. Please try again."}
     except Exception as e:
         logger.error(f"Google login error: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")

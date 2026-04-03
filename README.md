@@ -84,6 +84,8 @@ The backend now includes built-in production observability:
 ### 1. Hosting the Backend (API Server)
 Because this application runs deep real-time network scans, it requires a robust processing environment. Consider utilizing a strong Cloud Provider VPS such as **DigitalOcean**, **AWS EC2**, or **Linode**.
 
+For **Render**, this repo now includes a [render.yaml](/Users/sab/The%20Ice%20Project%2001/Invisi-Scan/render.yaml) blueprint for the backend API service. It uses the `backend/` directory as the service root, installs from `backend/requirements.txt`, starts FastAPI with `uvicorn api:app --host 0.0.0.0 --port $PORT`, and checks `/api/health` for readiness.
+
 **Deployment Steps for Backend**:
 1. Clone the repository onto your Cloud VPS.
 2. Install Python dependencies and system-level requirements:
@@ -92,7 +94,7 @@ Because this application runs deep real-time network scans, it requires a robust
    sudo apt install -y python3-venv nmap lsof xdg-utils
    python3 -m venv venv
    source venv/bin/activate
-   pip install -r requirements.txt
+   pip install -r backend/requirements.txt
    ```
 3. Use a process manager like `Systemd` or `PM2` to keep the FastAPI backend running continuously.
 4. Deploy behind a reverse proxy like **Nginx**, and secure it with an SSL certificate via Certbot (Let's Encrypt). Map `https://api.yourdomain.com` to internal port `8001`.
@@ -102,9 +104,10 @@ The React Frontend uses Vite, and can be easily built into static HTML/JS files 
 
 **Deployment Steps for Frontend**:
 1. Change into the frontend directory: `cd frontend`
-2. Create a `.env` file and set the `VITE_API_URL` to point to your live backend domain:
+2. Create a `.env` file and set the `VITE_API_URL` to point to your live backend domain, and set `VITE_GOOGLE_CLIENT_ID` to the same Google OAuth client ID used by the backend:
    ```
    VITE_API_URL=https://api.yourdomain.com
+   VITE_GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
    ```
 3. Build the production application:
    ```bash
@@ -112,6 +115,17 @@ The React Frontend uses Vite, and can be easily built into static HTML/JS files 
    ```
 4. This will output all static assets into a `dist/` directory.
 5. Deploy the `dist/` directory to **Vercel**, **Netlify**, **Cloudflare Pages**, or host it completely free via GitHub Pages.
+
+### 3. Google Sign-In Environment Variables
+
+To make Google login work in production, configure both sides with the same client ID:
+
+- Backend env on Render: `GOOGLE_CLIENT_ID`
+- Frontend env on Vercel: `VITE_GOOGLE_CLIENT_ID`
+- Frontend API env on Vercel: `VITE_API_URL=https://invisiscan-api.onrender.com`
+- Backend CORS env on Render: `ALLOWED_ORIGINS=https://invisi-scan-three.vercel.app,http://localhost:5174`
+
+If either Google client ID is missing or mismatched, Google sign-in will fail even when the button renders correctly.
 
 > **Note on Live File Changes:** If you use Antigravity to manipulate or change code files in the source locally, those changes will reflect on the live website **only after** you push the code updates to your deployment environment (e.g. running `npm run build` again and pushing the changes on Vercel, or pulling the new changes to your VPS).
 

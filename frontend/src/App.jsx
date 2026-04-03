@@ -153,6 +153,7 @@ function Login({ onLogin }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const googleButtonRef = useRef(null);
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
@@ -165,12 +166,21 @@ function Login({ onLogin }) {
       window.google.accounts.id.initialize({
         client_id: googleClientId,
         callback: async (response) => {
-          setLoading(true);
+          if (!response?.credential) {
+            setError('Google sign-in did not return a valid credential.');
+            return;
+          }
+
+          const controller = new AbortController();
+          const timeoutId = window.setTimeout(() => controller.abort(), 6000);
+
+          setGoogleLoading(true);
           setError('');
           try {
             const res = await fetch(`${API_BASE_URL}/api/auth/google`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
+              signal: controller.signal,
               body: JSON.stringify({ id_token: response.credential }),
             });
             const data = await res.json();
@@ -181,9 +191,10 @@ function Login({ onLogin }) {
             }
           } catch (err) {
             console.error(err);
-            setError('Google sign-in failed');
+            setError(err.name === 'AbortError' ? 'Google sign-in took too long. Please try again.' : 'Google sign-in failed');
           } finally {
-            setLoading(false);
+            window.clearTimeout(timeoutId);
+            setGoogleLoading(false);
           }
         }
       });
@@ -211,6 +222,7 @@ function Login({ onLogin }) {
     script.defer = true;
     script.id = 'google-identity-script';
     script.onload = initGoogle;
+    script.onerror = () => setError('Failed to load Google sign-in. Please refresh and try again.');
     document.head.appendChild(script);
     return undefined;
   }, [googleClientId, isRegistering, onLogin]);
@@ -305,7 +317,7 @@ function Login({ onLogin }) {
 
           <button 
             type="submit" 
-            disabled={loading}
+            disabled={loading || googleLoading}
             className="btn-primary w-full mt-8 py-4 text-base"
           >
             {loading ? <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin"></div> : <Unlock className="w-5 h-5" />}
@@ -317,7 +329,12 @@ function Login({ onLogin }) {
               <div className="text-center text-[11px] uppercase tracking-widest text-slate-500">or</div>
               {googleClientId ? (
                 <div className="flex justify-center">
-                  <div ref={googleButtonRef} />
+                  <div className="flex flex-col items-center gap-3">
+                    <div ref={googleButtonRef} className={googleLoading ? 'pointer-events-none opacity-60' : ''} />
+                    {googleLoading && (
+                      <div className="text-xs text-slate-400">Google sign-in in progress...</div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="text-center text-xs text-amber-300/80 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">

@@ -2,6 +2,8 @@ import os
 import sys
 import time
 
+import httpx
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from fastapi.testclient import TestClient
@@ -72,6 +74,25 @@ def test_validation_and_auth_guards():
 def test_google_auth_requires_id_token():
     response = client.post("/api/auth/google", json={})
     assert response.status_code == 422
+
+
+def test_google_auth_blank_id_token_rejected():
+    response = client.post("/api/auth/google", json={"id_token": "   "})
+    assert response.status_code == 422
+
+
+def test_google_auth_timeout_returns_friendly_error(monkeypatch):
+    async def fake_get(self, *args, **kwargs):
+        raise httpx.ReadTimeout("timed out")
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    response = client.post("/api/auth/google", json={"id_token": "fake-token"})
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": False,
+        "error": "Google sign-in timed out. Please try again.",
+    }
 
 
 def test_cors_preflight_for_known_origin():
