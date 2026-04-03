@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 
 export default function TopologyGraph({ data }) {
   const containerRef = useRef(null);
+  const fgRef = useRef();
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
 
@@ -56,6 +57,24 @@ export default function TopologyGraph({ data }) {
     setGraphData({ nodes, links });
   }, [data]);
 
+  const handleNodeClick = useCallback(node => {
+     if (fgRef.current) {
+        fgRef.current.centerAt(node.x, node.y, 1000);
+        fgRef.current.zoom(4, 1000);
+     }
+  }, []);
+
+  const lastTapRef = useRef(0);
+  const handleBackgroundClick = useCallback(() => {
+     const now = Date.now();
+     if (now - lastTapRef.current < 300) {
+        if (fgRef.current) {
+           fgRef.current.zoomToFit(400, 50);
+        }
+     }
+     lastTapRef.current = now;
+  }, []);
+
   return (
     <div ref={containerRef} className="w-full h-[400px] border border-white/5 bg-black/40 rounded-xl overflow-hidden relative">
       <div className="absolute top-4 left-4 z-10 text-xs font-semibold text-slate-400 flex gap-4">
@@ -66,10 +85,13 @@ export default function TopologyGraph({ data }) {
       </div>
       {dimensions.width > 0 && graphData.nodes.length > 0 && (
         <ForceGraph2D
+          ref={fgRef}
           width={dimensions.width}
           height={dimensions.height}
           graphData={graphData}
           nodeLabel="label"
+          onNodeClick={handleNodeClick}
+          onBackgroundClick={handleBackgroundClick}
           nodeColor={node => {
             switch(node.group) {
               case 1: return '#6366f1'; // Indigo Root

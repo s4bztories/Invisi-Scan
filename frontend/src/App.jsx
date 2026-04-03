@@ -264,6 +264,16 @@ function Dashboard({ authData, onLogout }) {
   const [target, setTarget] = useState('');
   const [portsMode, setPortsMode] = useState('fast');
   const [isScanning, setIsScanning] = useState(false);
+  const [theme, setTheme] = useState(localStorage.getItem('soc_theme') || 'default');
+
+  useEffect(() => {
+    if (theme === 'default') {
+      document.documentElement.removeAttribute('data-theme');
+    } else {
+      document.documentElement.setAttribute('data-theme', theme);
+    }
+    localStorage.setItem('soc_theme', theme);
+  }, [theme]);
   
   // Real-time states
   const [logs, setLogs] = useState([]);
@@ -447,7 +457,7 @@ function Dashboard({ authData, onLogout }) {
   //   a.click();
   // };
 
-  const handleExportPdf = () => {
+  const handleExportPdf = async () => {
     if (!reportData) return;
     const doc = new jsPDF();
     doc.setFont("helvetica", "bold");
@@ -493,11 +503,27 @@ function Dashboard({ authData, onLogout }) {
             currentY += 5;
         }
     });
+
+    const pdfBlob = doc.output('blob');
+    const file = new File([pdfBlob], `InvisiScan_Report_${target}.pdf`, { type: 'application/pdf' });
+    
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+       try {
+         await navigator.share({
+           files: [file],
+           title: 'Invisi-Scan Report',
+           text: `Security assessment report for ${target}`
+         });
+         return;
+       } catch (err) {
+         console.warn('Share sheet failed or cancelled', err);
+       }
+    }
     
     doc.save(`InvisiScan_Report_${target}.pdf`);
   };
 
-  const handleExportCsv = () => {
+  const handleExportCsv = async () => {
     if (!reportData) return;
     const rows = [ ["Port", "Banner", "CVE Count"] ];
     openPorts.forEach(p => {
@@ -507,8 +533,24 @@ function Dashboard({ authData, onLogout }) {
            cves[p] ? cves[p].length : 0
        ]);
     });
-    const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n");
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = rows.map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const file = new File([blob], `InvisiScan_Report_${target}.csv`, { type: 'text/csv' });
+
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+       try {
+         await navigator.share({
+           files: [file],
+           title: 'Invisi-Scan CSV Report',
+           text: `Raw data export for ${target}`
+         });
+         return;
+       } catch (err) {
+         console.warn('Share sheet failed or cancelled', err);
+       }
+    }
+
+    const encodedUri = "data:text/csv;charset=utf-8," + encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
     link.setAttribute("download", `InvisiScan_Report_${target}.csv`);
@@ -536,7 +578,7 @@ function Dashboard({ authData, onLogout }) {
           </div>
           
           <div className="flex flex-col md:flex-row items-center gap-4 md:gap-8 mt-4 md:mt-0 w-full md:w-auto">
-            <div className="flex flex-wrap justify-center sm:flex-nowrap bg-[#1A1A1D] rounded-xl p-1 shadow-inner w-full sm:w-auto overflow-x-auto gap-1 sm:gap-0">
+            <div className="hidden md:flex flex-wrap justify-center sm:flex-nowrap bg-[#1A1A1D] rounded-xl p-1 shadow-inner w-full sm:w-auto overflow-x-auto gap-1 sm:gap-0">
               <button 
                 onClick={() => setActiveTab('analytics')} 
                 className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all flex items-center gap-2 ${activeTab === 'analytics' ? 'bg-white text-black shadow-sm' : 'text-slate-400 hover:text-white'}`}
@@ -572,6 +614,12 @@ function Dashboard({ authData, onLogout }) {
             </div>
             
             <div className="flex items-center justify-center gap-4 pt-4 md:pt-0 md:pl-8 border-t md:border-t-0 md:border-l border-white/10 w-full md:w-auto mt-2 md:mt-0">
+              <select onChange={(e) => setTheme(e.target.value)} value={theme} className="hidden lg:block bg-[#1A1A1D] border border-white/10 rounded-xl px-2 py-1.5 text-xs text-slate-400 outline-none hover:bg-white/5 font-semibold cursor-pointer appearance-none text-center">
+                 <option value="default">Midnight</option>
+                 <option value="matrix">Matrix</option>
+                 <option value="neon">Neon</option>
+                 <option value="ghost">Ghost</option>
+              </select>
               <div className="text-right">
                 <p className="text-sm text-slate-200 font-semibold">{(username || 'GUEST')}</p>
                 <p className="text-xs text-indigo-400 font-medium tracking-wide">{(role || 'OPERATOR').toUpperCase()}</p>
@@ -966,6 +1014,28 @@ function Dashboard({ authData, onLogout }) {
       
       {diffData && <DiffModal data={diffData} onClose={() => setDiffData(null)} />}
       </div>
+      
+      {/* Mobile Bottom Navigation Bar */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#111113]/90 backdrop-blur-2xl border-t border-white/[0.05] pb-6 pt-2 px-2 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
+        <div className="flex justify-around items-center max-w-md mx-auto">
+          <button onClick={() => setActiveTab('analytics')} className={`flex flex-col items-center gap-1.5 p-2 rounded-xl flex-1 transition-all ${activeTab === 'analytics' ? 'text-indigo-400 font-bold scale-110 drop-shadow-[0_0_8px_rgba(129,140,248,0.5)]' : 'text-slate-500 font-medium'}`}>
+            <Activity className="w-5 h-5" />
+            <span className="text-[10px]">Command</span>
+          </button>
+          <button onClick={() => setActiveTab('scanner')} className={`flex flex-col items-center gap-1.5 p-2 rounded-xl flex-1 transition-all ${activeTab === 'scanner' ? 'text-indigo-400 font-bold scale-110 drop-shadow-[0_0_8px_rgba(129,140,248,0.5)]' : 'text-slate-500 font-medium'}`}>
+            <Target className="w-5 h-5" />
+            <span className="text-[10px]">Scanner</span>
+          </button>
+          <button onClick={fetchHistory} className={`flex flex-col items-center gap-1.5 p-2 rounded-xl flex-1 transition-all ${activeTab === 'history' ? 'text-indigo-400 font-bold scale-110 drop-shadow-[0_0_8px_rgba(129,140,248,0.5)]' : 'text-slate-500 font-medium'}`}>
+            <History className="w-5 h-5" />
+            <span className="text-[10px]">History</span>
+          </button>
+          <button onClick={() => setActiveTab('autopilot')} className={`flex flex-col items-center gap-1.5 p-2 rounded-xl flex-1 transition-all ${activeTab === 'autopilot' ? 'text-indigo-400 font-bold scale-110 drop-shadow-[0_0_8px_rgba(129,140,248,0.5)]' : 'text-slate-500 font-medium'}`}>
+            <Shield className="w-5 h-5" />
+            <span className="text-[10px]">Autopilot</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -981,9 +1051,40 @@ function App() {
     }
   }, []);
 
+  const subscribePush = async (token) => {
+    try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') return;
+      
+      const reg = await navigator.serviceWorker.ready;
+      if (!reg) return;
+
+      const res = await fetch(`${API_BASE_URL}/api/vapid-public-key`);
+      if (!res.ok) return;
+      const { publicKey } = await res.json();
+      
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: publicKey
+      });
+      
+      await fetch(`${API_BASE_URL}/api/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ subscription: sub })
+      });
+    } catch(e) {
+      console.warn("Push subscription failed", e);
+    }
+  };
+
   const handleLogin = (data) => {
     setAuthData(data);
     localStorage.setItem('soc_session', JSON.stringify(data));
+    if (data.token) {
+      subscribePush(data.token);
+    }
   };
 
   const handleLogout = async () => {

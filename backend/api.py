@@ -74,6 +74,7 @@ from backend.core.cve_lookup import CVELookup
 from backend.core.ai_helper import AIHelper
 from backend.core.reporter import Reporter
 from backend import database
+from pywebpush import webpush, WebPushException
 
 # Initialize the database schema
 database.init_db()
@@ -161,6 +162,39 @@ def get_analytics_data(request: Request):
     except Exception: return {"ok": False, "error": "Invalid token"}
     data = database.get_analytics(role, username)
     return {"ok": True, "analytics": data}
+
+class SubscribeRequest(BaseModel):
+    subscription: dict
+
+@app.get("/api/vapid-public-key")
+def get_vapid_key():
+    return {"publicKey": "BMNZc7XW9W5dOeNImG5ZG4P2UFZtEa-5udjbuiTpmnRSR2o58iUOSr2Qsey25I9W5NxMEPQVl2UbxTZHf67D2gI"}
+
+@app.post("/api/subscribe")
+def subscribe_push(req: SubscribeRequest, current_user: dict = Depends(get_current_user)):
+    try:
+        username = current_user["username"]
+        database.save_push_subscription(username, req.subscription)
+        return {"ok": True}
+    except Exception as e:
+        logger.error(f"Subscription error: {e}")
+        raise HTTPException(status_code=500, detail="Internal error")
+
+async def send_web_push(title: str, message: str):
+    subs = database.get_push_subscriptions()
+    payload = json.dumps({"title": title, "body": message})
+    for sub in subs:
+        try:
+            webpush(
+                subscription_info=sub["subscription"],
+                data=payload,
+                vapid_private_key=os.path.join(os.path.dirname(os.path.abspath(__file__)), "private_key.pem"),
+                vapid_claims={"sub": "mailto:admin@example.com"}
+            )
+        except WebPushException as ex:
+            logger.error(f"Web Push config error: {repr(ex)}")
+        except Exception as e:
+            logger.error(f"Web push error: {e}")
 
 @app.get("/api/admin/users")
 def get_admin_users(request: Request):
@@ -555,6 +589,8 @@ async def websocket_scan(websocket: WebSocket):
         risk_level = "Secure"
         if any(len(cves) > 0 for cves in cve_results.values()):
             risk_level = "High"
+            # Send Web Push alert for high risk
+            asyncio.create_task(send_web_push("🚨 High Risk Vulnerability Found!", f"Target {target} is exposed with critical exploits."))
         elif len(open_ports) > 0:
             risk_level = "Medium"
             

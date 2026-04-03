@@ -256,3 +256,29 @@ def delete_scheduled_scan(scan_id: int):
             db.commit()
     finally:
         db.close()
+
+class PushSubscription(Base):
+    __tablename__ = "push_subscriptions"
+    id = Column(Integer, primary_key=True, index=True)
+    operator = Column(String, unique=True, index=True)
+    subscription_json = Column(Text)
+
+def save_push_subscription(operator: str, subscription_data: dict):
+    db = SessionLocal()
+    try:
+        sub = db.query(PushSubscription).filter(PushSubscription.operator == operator).first()
+        if sub:
+            sub.subscription_json = json.dumps(subscription_data)
+        else:
+            sub = PushSubscription(operator=operator, subscription_json=json.dumps(subscription_data))
+            db.add(sub)
+        db.commit()
+    finally:
+        db.close()
+
+def get_push_subscriptions():
+    db = SessionLocal()
+    try:
+        return [{"operator": s.operator, "subscription": json.loads(s.subscription_json)} for s in db.query(PushSubscription).all()]
+    finally:
+        db.close()
