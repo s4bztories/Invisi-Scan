@@ -333,3 +333,12 @@ def get_push_subscriptions():
         ]
     finally:
         db.close()
+
+
+def healthcheck() -> bool:
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False

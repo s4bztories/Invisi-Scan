@@ -54,6 +54,31 @@ The platform uses two forms of communication between the React Frontend and the 
 
 ---
 
+## 📈 Observability
+
+The backend now includes built-in production observability:
+
+- `GET /api/health`: readiness/health summary with DB connectivity and uptime.
+- `GET /api/metrics` (admin-only): request volume, error count, average latency, status-code counts, and top paths.
+- Every HTTP response includes:
+  - `X-Request-ID`
+  - `X-Process-Time-Ms`
+- The frontend reports uncaught errors and unhandled promise rejections to:
+  - `POST /api/observability/client-error`
+
+---
+
+## ✅ Quality Gates & Testing
+
+- Backend tests:
+  - `python -m pytest tests -v`
+- Frontend checks:
+  - `npm --prefix frontend run lint`
+  - `npm --prefix frontend run build`
+- GitHub Actions CI (`.github/workflows/ci.yml`) runs backend + frontend gates on push/PR to `main`.
+
+---
+
 ## 🌍 How to Deploy as a Live Website
 
 ### 1. Hosting the Backend (API Server)

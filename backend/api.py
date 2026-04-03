@@ -5,6 +5,10 @@ import sys
 import socket
 import ipaddress
 import logging
+import time
+import uuid
+from collections import Counter
+from threading import Lock
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -134,6 +138,63 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+OBS_STARTED_AT = datetime.now(timezone.utc)
+OBS_LOCK = Lock()
+OBS_TOTAL = 0
+OBS_ERRORS = 0
+OBS_LATENCY_MS_SUM = 0.0
+OBS_STATUS = Counter()
+OBS_PATHS = Counter()
+
+
+@app.middleware("http")
+async def observability_middleware(request: Request, call_next):
+    global OBS_TOTAL, OBS_ERRORS, OBS_LATENCY_MS_SUM
+
+    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    started = time.perf_counter()
+    path = request.url.path
+    method = request.method
+
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+    except Exception:
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        with OBS_LOCK:
+            OBS_TOTAL += 1
+            OBS_ERRORS += 1
+            OBS_LATENCY_MS_SUM += elapsed_ms
+            OBS_STATUS[500] += 1
+            OBS_PATHS[path] += 1
+        logger.exception(
+            "request_failed request_id=%s method=%s path=%s duration_ms=%.2f",
+            request_id,
+            method,
+            path,
+            elapsed_ms,
+        )
+        raise
+
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    with OBS_LOCK:
+        OBS_TOTAL += 1
+        OBS_LATENCY_MS_SUM += elapsed_ms
+        OBS_STATUS[status_code] += 1
+        OBS_PATHS[path] += 1
+
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Process-Time-Ms"] = f"{elapsed_ms:.2f}"
+    logger.info(
+        "request request_id=%s method=%s path=%s status=%s duration_ms=%.2f",
+        request_id,
+        method,
+        path,
+        status_code,
+        elapsed_ms,
+    )
+    return response
+
 @app.get("/", tags=["General"])
 def read_root():
     """
@@ -142,6 +203,43 @@ def read_root():
     Returns the API status to verify the service is running.
     """
     return {"status": "Invisi-Scan API is running"}
+
+
+@app.get("/api/health", tags=["General"])
+def read_health():
+    db_ok = database.healthcheck()
+    status = "healthy" if db_ok else "degraded"
+    return {
+        "ok": db_ok,
+        "status": status,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "uptime_seconds": int((datetime.now(timezone.utc) - OBS_STARTED_AT).total_seconds()),
+        "version": app.version,
+    }
+
+
+@app.get("/api/metrics", tags=["General"])
+def read_metrics(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required")
+
+    with OBS_LOCK:
+        total = OBS_TOTAL
+        errors = OBS_ERRORS
+        latency_sum = OBS_LATENCY_MS_SUM
+        status_counts = dict(OBS_STATUS)
+        path_counts = dict(OBS_PATHS)
+
+    avg_latency_ms = round((latency_sum / total), 2) if total else 0.0
+    return {
+        "ok": True,
+        "uptime_seconds": int((datetime.now(timezone.utc) - OBS_STARTED_AT).total_seconds()),
+        "requests_total": total,
+        "requests_errors": errors,
+        "average_latency_ms": avg_latency_ms,
+        "status_counts": status_counts,
+        "top_paths": sorted(path_counts.items(), key=lambda kv: kv[1], reverse=True)[:10],
+    }
 
 @app.get("/api/history")
 def get_scan_history(request: Request):
@@ -403,6 +501,13 @@ class TotpSetupVerifyRequest(BaseModel):
 class GoogleAuthRequest(BaseModel):
     id_token: str
 
+
+class ClientErrorEvent(BaseModel):
+    message: str
+    stack: Optional[str] = None
+    path: Optional[str] = None
+    source: Optional[str] = None
+
 async def send_telegram_alert(username: str, client_ip: str, user_agent: str, action: str = "LOGIN"):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
@@ -435,6 +540,23 @@ async def send_telegram_alert(username: str, client_ip: str, user_agent: str, ac
             await client.post(url, json=payload, timeout=5.0)
         except Exception as e:
             logger.error(f"Failed to send Telegram alert: {e}")
+
+
+@app.post("/api/observability/client-error")
+@limiter.limit("20/minute")
+def capture_client_error(request: Request, event: ClientErrorEvent):
+    client_ip = request.client.host if request.client else "unknown"
+    ua = request.headers.get("User-Agent", "unknown")
+    logger.warning(
+        "client_error path=%s source=%s ip=%s ua=%s message=%s stack=%s",
+        event.path or "unknown",
+        event.source or "web",
+        client_ip,
+        ua[:120],
+        event.message[:500],
+        (event.stack or "")[:1000],
+    )
+    return {"ok": True}
 
 
 def create_access_token(user: database.User, hours: int = 24):
