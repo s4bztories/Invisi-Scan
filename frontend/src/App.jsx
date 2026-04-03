@@ -391,6 +391,7 @@ function Dashboard({ authData, onLogout }) {
 
   const wsRef = useRef(null);
   const logsEndRef = useRef(null);
+  const previousLogsCountRef = useRef(0);
 
   const { username, role } = authData;
   const previousByTarget = useMemo(() => {
@@ -413,10 +414,13 @@ function Dashboard({ authData, onLogout }) {
   }, [activeTab]);
 
   useEffect(() => {
-    if (activeTab === 'scanner' && logsEndRef.current) {
-      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    const hasNewLogs = logs.length > previousLogsCountRef.current;
+    previousLogsCountRef.current = logs.length;
+
+    if (activeTab === 'scanner' && isScanning && hasNewLogs && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
-  }, [logs, activeTab]);
+  }, [logs, activeTab, isScanning]);
 
   const fetchHistory = async () => {
     try {
