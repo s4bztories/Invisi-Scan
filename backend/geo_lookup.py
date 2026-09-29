@@ -1,10 +1,16 @@
 import ipaddress
 import socket
-
+import asyncio
 import httpx
 
-
-LOCAL_TARGETS = {"localhost", "127.0.0.1", "demo.vulnerable.local"}
+LOCAL_TARGETS = {
+    "localhost",
+    "127.0.0.1",
+    "::1",
+    "0.0.0.0",
+    "testclient",
+    "demo.vulnerable.local",
+}
 
 
 def _normalize_value(value: str | None, fallback: str = "Unknown") -> str:
@@ -12,27 +18,32 @@ def _normalize_value(value: str | None, fallback: str = "Unknown") -> str:
     return cleaned or fallback
 
 
-def _resolve_public_ip(target: str) -> str:
-    cleaned = (target or "").strip()
-    if not cleaned:
-        return ""
+def _is_private_or_local_ip(ip_str: str) -> bool:
+    try:
+        ip_obj = ipaddress.ip_address(ip_str)
+        return ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local
+    except ValueError:
+        return False
 
-    if cleaned in LOCAL_TARGETS:
+
+async def _resolve_public_ip_async(target: str) -> str:
+    cleaned = (target or "").strip().lower()
+    if not cleaned or cleaned in LOCAL_TARGETS:
         return "127.0.0.1"
 
-    try:
-        ip_obj = ipaddress.ip_address(cleaned)
-        if ip_obj.is_private or ip_obj.is_loopback:
-            return str(ip_obj)
-        return str(ip_obj)
-    except ValueError:
-        pass
+    if _is_private_or_local_ip(cleaned):
+        return cleaned
 
     try:
-        resolved = socket.gethostbyname(cleaned)
-        return resolved
-    except OSError:
-        return ""
+        loop = asyncio.get_running_loop()
+        info = await loop.getaddrinfo(cleaned, None)
+        if info:
+            resolved_ip = info[0][4][0]
+            return resolved_ip
+    except Exception:
+        pass
+
+    return ""
 
 
 def _local_network_payload(ip_address: str) -> dict:
@@ -80,20 +91,17 @@ def _normalize_ipapi(data: dict, resolved_ip: str) -> dict:
 
 
 async def lookup_geo(target: str) -> dict:
-    resolved_ip = _resolve_public_ip(target)
+    cleaned = (target or "").strip().lower()
 
-    if target in LOCAL_TARGETS:
-        return _local_network_payload("127.0.0.1")
+    if not cleaned or cleaned in LOCAL_TARGETS or _is_private_or_local_ip(cleaned):
+        return _local_network_payload(cleaned or "127.0.0.1")
 
-    if resolved_ip:
-        try:
-            ip_obj = ipaddress.ip_address(resolved_ip)
-            if ip_obj.is_private or ip_obj.is_loopback:
-                return _local_network_payload(resolved_ip)
-        except ValueError:
-            pass
+    resolved_ip = await _resolve_public_ip_async(cleaned)
 
-    lookup_target = resolved_ip or (target or "").strip()
+    if resolved_ip and _is_private_or_local_ip(resolved_ip):
+        return _local_network_payload(resolved_ip)
+
+    lookup_target = resolved_ip or cleaned
     if not lookup_target:
         return {}
 
@@ -106,10 +114,11 @@ async def lookup_geo(target: str) -> dict:
         async with httpx.AsyncClient(
             follow_redirects=True,
             headers={"User-Agent": "Invisi-Scan/1.0"},
+            timeout=3.0,
         ) as client:
             for url, normalizer in providers:
                 try:
-                    resp = await client.get(url, timeout=6.0)
+                    resp = await client.get(url)
                     if resp.status_code != 200:
                         continue
                     payload = normalizer(resp.json(), resolved_ip)
@@ -121,7 +130,7 @@ async def lookup_geo(target: str) -> dict:
                 except Exception:
                     continue
     except Exception as exc:
-        print(f"Geolocation lookup failed: {exc}")
+        pass
 
     if resolved_ip:
         return {
@@ -134,3 +143,4 @@ async def lookup_geo(target: str) -> dict:
         }
 
     return {}
+

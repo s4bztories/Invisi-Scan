@@ -10,6 +10,8 @@ import uuid
 from collections import Counter
 from threading import Lock
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException, Depends, BackgroundTasks
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -87,8 +89,18 @@ from backend.core.banner import BannerGrabber
 from backend.core.cve_lookup import CVELookup
 from backend.core.ai_helper import AIHelper
 from backend.core.reporter import Reporter
+from backend.core.rag_engine import RAGEngine
+from backend.core.ai_chatbot import AIChatbot
+from backend.core.ml_risk_scorer import MLRiskScorer
+from backend.mcp_server import InvisiScanMCPServer
 from backend import database
 from pywebpush import webpush, WebPushException
+
+# Initialize core AI & security components
+rag_engine = RAGEngine()
+ai_chatbot = AIChatbot(rag_engine=rag_engine)
+ml_risk_scorer = MLRiskScorer()
+mcp_server = InvisiScanMCPServer()
 
 # Initialize the database schema
 database.init_db()
@@ -195,14 +207,17 @@ async def observability_middleware(request: Request, call_next):
     )
     return response
 
+FRONTEND_DIST_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend", "dist")
+
 @app.get("/", tags=["General"])
 def read_root():
-    """
-    Health check endpoint.
-    
-    Returns the API status to verify the service is running.
-    """
+    index_path = os.path.join(FRONTEND_DIST_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
     return {"status": "Invisi-Scan API is running"}
+
+if os.path.exists(FRONTEND_DIST_DIR):
+    app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST_DIR, "assets")), name="assets")
 
 
 @app.get("/api/health", tags=["General"])
@@ -598,9 +613,14 @@ def verify_otp_challenge_token(token: str) -> str:
 @limiter.limit("5/minute")
 async def register(request: Request, req: RegisterRequest, background_tasks: BackgroundTasks):
     try:
-        db = database.SessionLocal()
-        success = database.create_user(db, req.username, req.password, "operator")
-        db.close()
+        def _register_user():
+            db = database.SessionLocal()
+            try:
+                return database.create_user(db, req.username, req.password, "operator")
+            finally:
+                db.close()
+
+        success = await asyncio.to_thread(_register_user)
         if not success:
             logger.warning(f"Registration failed: username {req.username} already exists")
             return {"ok": False, "error": "Username already exists."}
@@ -619,9 +639,14 @@ async def register(request: Request, req: RegisterRequest, background_tasks: Bac
 @limiter.limit("5/minute")
 async def login(request: Request, req: LoginRequest, background_tasks: BackgroundTasks):
     try:
-        db = database.SessionLocal()
-        user = database.authenticate_user(db, req.username, req.password)
-        db.close()
+        def _auth():
+            db = database.SessionLocal()
+            try:
+                return database.authenticate_user(db, req.username, req.password)
+            finally:
+                db.close()
+
+        user = await asyncio.to_thread(_auth)
 
         if not user:
             logger.warning(f"Failed login attempt for username: {req.username}")
@@ -966,6 +991,83 @@ async def websocket_scan(websocket: WebSocket):
             await websocket.close()
         except:
             pass
+
+
+class ChatRequest(BaseModel):
+    query: str
+    history: Optional[List[dict]] = None
+    report: Optional[dict] = None
+
+
+class MLRiskRequest(BaseModel):
+    open_ports: List[int]
+    cve_results: Optional[Dict[int, List[dict]]] = None
+    web_recon: Optional[Dict[str, dict]] = None
+
+
+class MCPCallRequest(BaseModel):
+    name: str
+    arguments: Optional[dict] = None
+
+
+@app.post("/api/ai/chat", tags=["AI SOC Assistant"])
+def chat_ai(req: ChatRequest, current_user: dict = Depends(get_current_user)):
+    try:
+        response = ai_chatbot.chat(req.query, history=req.history, current_report=req.report)
+        return {"ok": True, **response}
+    except Exception as e:
+        logger.error(f"AI Chat error: {str(e)}")
+        raise HTTPException(status_code=500, detail="AI Assistant Error")
+
+
+@app.websocket("/ws/ai/chat")
+async def websocket_ai_chat(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            raw_data = await websocket.receive_text()
+            payload = json.loads(raw_data)
+            query = payload.get("query", "")
+            history = payload.get("history", [])
+            report = payload.get("report")
+            
+            res = await asyncio.to_thread(ai_chatbot.chat, query, history, report)
+            await websocket.send_json({"type": "response", **res})
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        await websocket.send_json({"type": "error", "message": str(e)})
+
+
+@app.post("/api/ml/risk-score", tags=["ML Threat Engine"])
+def compute_ml_risk(req: MLRiskRequest, current_user: dict = Depends(get_current_user)):
+    try:
+        cve_results = req.cve_results or {}
+        web_recon = req.web_recon or {}
+        result = ml_risk_scorer.evaluate(req.open_ports, cve_results, web_recon)
+        return {"ok": True, "analysis": result}
+    except Exception as e:
+        logger.error(f"ML Risk evaluation error: {str(e)}")
+        raise HTTPException(status_code=500, detail="ML Evaluation Error")
+
+
+@app.get("/api/mcp/manifest", tags=["MCP Server"])
+def get_mcp_manifest():
+    return mcp_server.get_manifest()
+
+
+@app.post("/api/mcp/call", tags=["MCP Server"])
+async def call_mcp_tool(req: MCPCallRequest, current_user: dict = Depends(get_current_user)):
+    try:
+        args = req.arguments or {}
+        result = await mcp_server.execute_tool(req.name, args)
+        return {"ok": True, "result": result}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error(f"MCP tool error: {str(e)}")
+        raise HTTPException(status_code=500, detail="MCP Execution Error")
+
 
 if __name__ == "__main__":
     import uvicorn

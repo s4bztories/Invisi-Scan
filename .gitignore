@@ -36,7 +36,10 @@ Thumbs.db
 .vscode/
 .idea/
 
-# ===============================
 # Node / Frontend (if any)
-# ===============================
 node_modules/
+
+# SQLite temp files
+*.db-shm
+*.db-wal
+

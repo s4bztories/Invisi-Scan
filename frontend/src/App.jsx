@@ -1,11 +1,12 @@
 import { lazy, Suspense, useMemo, useState, useEffect, useRef } from 'react';
-import { Terminal, Shield, AlertTriangle, CheckCircle, Activity, Lock, Unlock, Server, Download, KeyRound, LogOut, History, Crosshair, Globe, Target } from 'lucide-react';
+import { Terminal, Shield, AlertTriangle, CheckCircle, Activity, Lock, Unlock, Server, Download, KeyRound, LogOut, History, Crosshair, Globe, Target, Sparkles, Bot } from 'lucide-react';
 
 const TopologyGraph = lazy(() => import('./TopologyGraph'));
 const DiffModal = lazy(() => import('./DiffModal'));
 const AnalyticsDashboard = lazy(() => import('./AnalyticsDashboard'));
 const Autopilot = lazy(() => import('./Autopilot'));
 const AdminPanel = lazy(() => import('./AdminPanel'));
+const AiChatbot = lazy(() => import('./AiChatbot'));
 
 const ParticleNetwork3D = () => {
   const canvasRef = useRef(null);
@@ -723,6 +724,12 @@ function Dashboard({ authData, onLogout }) {
               >
                 Autopilot
               </button>
+              <button 
+                onClick={() => setActiveTab('ai-assistant')} 
+                className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all flex items-center gap-2 ${activeTab === 'ai-assistant' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm' : 'text-slate-400 hover:text-white'}`}
+              >
+                <Sparkles className="w-4 h-4 text-cyan-400" /> AI Assistant
+              </button>
               {role === 'admin' && (
                 <button 
                   onClick={() => setActiveTab('admin')} 
@@ -1142,6 +1149,12 @@ function Dashboard({ authData, onLogout }) {
         </div>
       )}
       
+      {activeTab === 'ai-assistant' && (
+        <Suspense fallback={<SectionLoader text="Loading InvisiBot AI Assistant..." />}>
+          <AiChatbot activeReport={reportData} token={authData?.token} apiBaseUrl={API_BASE_URL} />
+        </Suspense>
+      )}
+
       {diffData && (
         <Suspense fallback={<SectionLoader text="Loading comparison..." />}>
           <DiffModal data={diffData} onClose={() => setDiffData(null)} />
