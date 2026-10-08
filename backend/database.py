@@ -9,6 +9,10 @@ from passlib.context import CryptContext
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, create_engine, event, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
+import logging
+
+logger = logging.getLogger("invisiscan.database")
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # Keep encryption key stable across restarts. Falling back to a deterministic
 # key derived from SECRET_KEY avoids unreadable historical data when FERNET_KEY
@@ -17,8 +21,15 @@ def _resolve_fernet_key() -> str:
     key = os.getenv("FERNET_KEY")
     if key:
         return key
-    secret = os.getenv("SECRET_KEY", "super-secret-soc-key-change-in-prod")
-    digest = hashlib.sha256(secret.encode()).digest()
+    secret = os.getenv("SECRET_KEY")
+    if secret:
+        digest = hashlib.sha256(secret.encode()).digest()
+        return base64.urlsafe_b64encode(digest).decode()
+    logger.warning(
+        "SECURITY WARNING: Neither FERNET_KEY nor SECRET_KEY is set. "
+        "Using fallback key for development. Set FERNET_KEY in production!"
+    )
+    digest = hashlib.sha256(b"invisiscan-dev-insecure-fallback-key").digest()
     return base64.urlsafe_b64encode(digest).decode()
 
 

@@ -28,7 +28,9 @@ from slowapi.errors import RateLimitExceeded
 from contextlib import asynccontextmanager
 
 load_dotenv()
-SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-soc-key-change-in-prod")
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    SECRET_KEY = "invisiscan-dev-insecure-fallback-secret-key"
 ALGORITHM = "HS256"
 
 # Configure logging
@@ -41,6 +43,8 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+if SECRET_KEY == "invisiscan-dev-insecure-fallback-secret-key":
+    logger.warning("SECURITY WARNING: SECRET_KEY is not set in environment. Using development fallback. Set SECRET_KEY in production!")
 
 # Security
 security = HTTPBearer()
@@ -210,9 +214,10 @@ async def observability_middleware(request: Request, call_next):
 FRONTEND_DIST_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend", "dist")
 
 @app.get("/", tags=["General"])
-def read_root():
+def read_root(request: Request):
     index_path = os.path.join(FRONTEND_DIST_DIR, "index.html")
-    if os.path.exists(index_path):
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept and os.path.exists(index_path):
         return FileResponse(index_path)
     return {"status": "Invisi-Scan API is running"}
 
@@ -304,6 +309,16 @@ def subscribe_push(req: SubscribeRequest, current_user: dict = Depends(get_curre
         raise HTTPException(status_code=500, detail="Internal error")
 
 async def send_web_push(title: str, message: str):
+    vapid_key = os.getenv("VAPID_PRIVATE_KEY")
+    if not vapid_key:
+        local_pem = os.path.join(os.path.dirname(os.path.abspath(__file__)), "private_key.pem")
+        if os.path.isfile(local_pem):
+            vapid_key = local_pem
+    if not vapid_key:
+        logger.warning("Web Push skipped: VAPID_PRIVATE_KEY is not configured.")
+        return
+
+    vapid_claim = os.getenv("VAPID_CLAIM_EMAIL", "mailto:admin@example.com")
     subs = database.get_push_subscriptions()
     payload = json.dumps({"title": title, "body": message})
     for sub in subs:
@@ -311,8 +326,8 @@ async def send_web_push(title: str, message: str):
             webpush(
                 subscription_info=sub["subscription"],
                 data=payload,
-                vapid_private_key=os.path.join(os.path.dirname(os.path.abspath(__file__)), "private_key.pem"),
-                vapid_claims={"sub": "mailto:admin@example.com"}
+                vapid_private_key=vapid_key,
+                vapid_claims={"sub": vapid_claim}
             )
         except WebPushException as ex:
             logger.error(f"Web Push config error: {repr(ex)}")

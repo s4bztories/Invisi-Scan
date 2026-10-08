@@ -4,14 +4,38 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
 
 # Virtual environments
 .venv/
 venv/
 env/
+ENV/
 
-# Environment variables
+# Environment variables & secrets
 .env
+.env.*
+.env.local
+!.env.example
+
+# ===============================
+# Cryptographic Keys & Certificates
+# ===============================
+*.pem
+*.key
+*.crt
+*.cer
+*.pfx
+*.p12
+
+# ===============================
+# Database & SQLite files
+# ===============================
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
 
 # ===============================
 # Project Outputs / Reports
@@ -21,12 +45,17 @@ reports/
 *.csv
 *.txt
 *.json
+!package.json
+!frontend/package.json
+!vercel.json
 
 # ===============================
 # Logs & Temp files
 # ===============================
 *.log
 *.tmp
+*.bak
+*.swp
 
 # ===============================
 # OS / Editor files
@@ -36,10 +65,10 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Node / Frontend (if any)
+# ===============================
+# Frontend Builds & Dependencies
+# ===============================
 node_modules/
-
-# SQLite temp files
-*.db-shm
-*.db-wal
+dist/
+frontend/dist/
 
